@@ -34,7 +34,6 @@
             padding: 20px;
             margin-bottom: 20px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-            border-left: 5px solid #007bff;
         }
         .student-avatar {
             width: 60px;
@@ -46,15 +45,17 @@
         .student-name {
             font-size: 1.2rem;
             font-weight: bold;
-            color: #1a355e;
+            color: #ffffff;
         }
         .download-btn {
-            background: linear-gradient(135deg, #6c757d, #495057);
+            background:white;
             border: none;
-            color: white;
+            text-decoration: none;
+            color: black;
             font-weight: bold;
-            padding: 8px 15px;
-            border-radius: 50px;
+            padding: 5px 15px;
+            border-radius: 10px 10px;
+            margin-top: auto;
         }
         .grades-table {
             width: 100%;
@@ -68,6 +69,9 @@
             text-align: left;
             font-weight: bold;
             border: 1px solid #ddd;
+        }
+        .student-card{
+            background: linear-gradient( to right, #005ff7, #5ce6fb);
         }
         .grades-table td {
             padding: 8px;
@@ -96,7 +100,7 @@
                     <img src="<?= $foto ?>" alt="Foto" class="student-avatar">
                     <div>
                         <div class="student-name"><?= $nombre_completo ?></div>
-                        <div style="font-size: 0.9rem; color: #666;">Estudiante / <?= htmlspecialchars($grado) ?> <?= htmlspecialchars($grupo_romano)?> <?= htmlspecialchars(" / Turno:".$turno) ?></div>
+                        <div style="font-size: 0.9rem; color: #f9f9f9;">Estudiante / <?= htmlspecialchars($grado) ?> <?= htmlspecialchars($grupo_romano)?> <?= htmlspecialchars(" / Turno:".$turno) ?></div>
                     </div>
                 </div>
                 <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>" target="_blank" class="download-btn">
