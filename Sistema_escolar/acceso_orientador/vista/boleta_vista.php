@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Boleta Moderna</title>
+<!--boleta_vista.php-->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -21,7 +22,7 @@
             width: 100%;
             max-width: 300px;
             margin: 0 auto 30px;
-            background: linear-gradient(135deg, #61a7f1, #0056b3);
+            background: linear-gradient(135deg, #2b91ff, #0056b3);
             border: none;
             color: white;
             font-weight: bold;
@@ -71,7 +72,7 @@
             border: 1px solid #ddd;
         }
         .student-card{
-            background: linear-gradient( to right, #005ff7, #5ce6fb);
+            background: linear-gradient( to right, #0f6fff, #14f1f8);
         }
         .grades-table td {
             padding: 8px;

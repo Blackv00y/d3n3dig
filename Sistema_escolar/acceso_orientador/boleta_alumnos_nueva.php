@@ -1,5 +1,5 @@
 <?php
-// boleta_moderna.php — Solo lógica
+// boleta_alumnos_nueva.php — Solo lógica (sincronizada con info_grupo.php)
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -44,17 +44,35 @@ function decryptData($data, $key) {
     return openssl_decrypt($cipher, 'aes-256-cbc', $key, 0, base64_decode($iv));
 }
 
-// --- 5. Materias ---
+// --- 5. ✅ MATERIAS ASIGNADAS AL GRUPO (sincronización con info_grupo.php) ---
 $materias = [];
-$stmt = mysqli_prepare($conexion, "SELECT id_materia, nombre_materia FROM materias WHERE grado_materia = ? AND turno_materia = ? AND id_escuela = ? AND estado_materia = 0 ORDER BY N_orden_materia");
-mysqli_stmt_bind_param($stmt, "ssi", $grado, $turno, $id_escuela);
+$stmt = mysqli_prepare($conexion, "
+    SELECT m.id_materia, m.nombre_materia
+    FROM asignacion_materias am
+    JOIN materias m ON am.id_materia = m.id_materia
+    WHERE am.grado_credencial = ?
+      AND am.grupo_credencial = ?
+      AND am.turno_credencial = ?
+      AND am.id_escuela = ?
+      AND m.estado_materia = 0
+    ORDER BY m.N_orden_materia
+");
+mysqli_stmt_bind_param($stmt, "sssi", $grado, $grupo, $turno, $id_escuela);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 while ($row = mysqli_fetch_assoc($result)) $materias[] = $row;
 
 // --- 6. Alumnos (desencriptados y ordenados) ---
 $alumnos_raw = [];
-$stmt = mysqli_prepare($conexion, "SELECT id_credencial, nombre_credencial, apellidos_credencial, ruta_foto FROM credenciales WHERE grado_credencial = ? AND grupo_credencial = ? AND turno_credencial = ? AND id_escuela = ? AND nivel_usuario = 7");
+$stmt = mysqli_prepare($conexion, "
+    SELECT id_credencial, nombre_credencial, apellidos_credencial, ruta_foto 
+    FROM credenciales 
+    WHERE grado_credencial = ? 
+      AND grupo_credencial = ? 
+      AND turno_credencial = ? 
+      AND id_escuela = ? 
+      AND nivel_usuario = 7
+");
 mysqli_stmt_bind_param($stmt, "sssi", $grado, $grupo, $turno, $id_escuela);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
@@ -70,7 +88,13 @@ usort($alumnos_raw, function($a, $b) {
 
 // --- 7. Calificaciones ---
 $calificaciones = [];
-$stmt = mysqli_prepare($conexion, "SELECT id_alumno, id_materia, primer_parcial, segundo_parcial, tercer_parcial FROM calificaciones WHERE grado_credencial = ? AND grupo_credencial = ? AND turno_credencial = ?");
+$stmt = mysqli_prepare($conexion, "
+    SELECT id_alumno, id_materia, primer_parcial, segundo_parcial, tercer_parcial 
+    FROM calificaciones 
+    WHERE grado_credencial = ? 
+      AND grupo_credencial = ? 
+      AND turno_credencial = ?
+");
 mysqli_stmt_bind_param($stmt, "sss", $grado, $grupo, $turno);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
@@ -80,23 +104,13 @@ while ($row = mysqli_fetch_assoc($result)) {
 
 // --- 8. Grupo a romano ---
 function grupoToRomano($letra) {
-    $map = ['A'=>'I',
-            'B'=>'II',
-            'C'=>'III',
-            'D'=>'IV',
-            'E'=>'V',
-            'F'=>'VI',
-            'G'=>'VII',
-            'H'=>'VIII',
-            'I'=>'IX',
-            'J'=>'X'
-            ];
+    $map = ['A'=>'I','B'=>'II','C'=>'III','D'=>'IV','E'=>'V','F'=>'VI','G'=>'VII','H'=>'VIII','I'=>'IX','J'=>'X'];
     return $map[strtoupper($letra)] ?? $letra;
 }
 $grupo_romano = grupoToRomano($grupo);
 
 // --- 9. Pasar variables a la vista ---
-$alumnos = $alumnos_raw; // Renombrar para claridad
+$alumnos = $alumnos_raw;
 
 include 'header_orientador.php'; 
 include 'vista/boleta_vista.php'; 
