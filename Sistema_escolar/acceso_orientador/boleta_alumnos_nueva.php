@@ -44,7 +44,7 @@ function decryptData($data, $key) {
     return openssl_decrypt($cipher, 'aes-256-cbc', $key, 0, base64_decode($iv));
 }
 
-// --- 5. ✅ MATERIAS ASIGNADAS AL GRUPO (sincronización con info_grupo.php) ---
+// --- 5. MATERIAS ASIGNADAS AL GRUPO (sincronización con info_grupo.php) ---
 $materias = [];
 $stmt = mysqli_prepare($conexion, "
     SELECT m.id_materia, m.nombre_materia
