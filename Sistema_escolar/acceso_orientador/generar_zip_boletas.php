@@ -1,7 +1,12 @@
 <?php
-// generar_zip_boletas.php
+// generar_zip_boletas.php — Genera ZIP con boletas en estilo moderno
 session_start();
 if (!isset($_SESSION['id_credencial'])) exit;
+
+// Verificar que ZipArchive esté disponible
+if (!class_exists('ZipArchive')) {
+    die("Error: La extensión ZIP de PHP no está habilitada. Actívela en php.ini (extension=zip) y reinicia Apache.");
+}
 
 include '../funciones/conexQRConejo.php';
 $secretKey = 'your-secret-key';
@@ -65,10 +70,14 @@ if ($zip->open($tmp_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
         $nombre_completo = $alum['nombre_credencial'] . ' ' . $alum['apellidos_decrypted'];
         $id_alumno = $alum['id_credencial'];
 
-        // --- Foto ---
+        // --- Fotos ---
         $foto1 = !empty($alum['ruta_foto']) ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum['ruta_foto'], '/') : '';
         $foto2 = !empty($alum['ruta_foto2']) ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum['ruta_foto2'], '/') : '';
-        $foto_usar = file_exists($foto1) ? $foto1 : (file_exists($foto2) ? $foto2 : '');
+        $foto_default = __DIR__ . '/fpdf/foto_placeholder.png';
+
+        if (file_exists($foto1))      $foto_usar = $foto1;
+        elseif (file_exists($foto2))  $foto_usar = $foto2;
+        else                          $foto_usar = $foto_default;
 
         // --- Materias asignadas al grupo ---
         $materias = [];
@@ -101,89 +110,97 @@ if ($zip->open($tmp_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
             $calificaciones[$row['id_materia']] = $row;
         }
 
-        // --- Generar PDF en memoria ---
+        // --- Generar PDF ---
         $pdf = new BoletaPDF('P', 'mm', 'Letter');
-        $pdf->SetMargins(15, 15, 15);
-        $pdf->SetAutoPageBreak(true, 25);
+        $pdf->SetMargins(20, 20, 20);
+        $pdf->SetAutoPageBreak(true, 30);
         $pdf->AddPage();
 
         // Título
-        $pdf->SetFont('Arial', 'B', 16);
-        $pdf->Cell(0, 10, utf8_decode('BOLETA DE CALIFICACIONES'), 0, 1, 'C');
-        $pdf->Ln(5);
-
-        $pdf->SetFont('Arial', '', 10);
-        $pdf->Cell(0, 6, utf8_decode("Grado: $grado - Grupo: $grupo - Turno: $turno"), 0, 1, 'C');
+        $pdf->SetFont('Arial', 'B', 18);
+        $pdf->Cell(0, 15, utf8_decode('BOLETA DE CALIFICACIONES'), 0, 1, 'C');
         $pdf->Ln(10);
+
+        // Escuela
+        $pdf->SetFont('Arial', '', 11);
+        $pdf->Cell(0, 8, utf8_decode("Grado: $grado - Grupo: $grupo - Turno: $turno"), 0, 1, 'C');
+        $pdf->Ln(15);
 
         // Foto + Nombre
         $x_foto = 20;
         $y_foto = $pdf->GetY();
-        if ($foto_usar && file_exists($foto_usar)) {
-            list($ancho_orig, $alto_orig) = getimagesize($foto_usar);
-            $ratio = $alto_orig / $ancho_orig;
-            $ancho = 25;
-            $alto = 25 * $ratio;
-            if ($alto > 30) { $alto = 30; $ancho = 30 / $ratio; }
+        if (file_exists($foto_usar)) {
+            list($w, $h) = getimagesize($foto_usar);
+            $ratio = $h / $w;
+            $ancho = 30;
+            $alto = min(40, 30 * $ratio);
             $pdf->Image($foto_usar, $x_foto, $y_foto, $ancho, $alto);
-            $x_nombre = $x_foto + $ancho + 10;
+            $x_nombre = $x_foto + $ancho + 15;
         } else {
             $x_nombre = $x_foto;
         }
 
-        $pdf->SetXY($x_nombre, $y_foto);
-        $pdf->SetFont('Arial', 'B', 12);
-        $pdf->MultiCell(0, 6, utf8_decode("Estudiante: $nombre_completo"), 0, 'L');
-        $pdf->Ln(10);
+        $pdf->SetXY($x_nombre, $y_foto + 20);
+        $pdf->SetFont('Arial', 'B', 14);
+        $pdf->MultiCell(0, 8, utf8_decode("Estudiante: $nombre_completo"), 0, 'L');
+        $pdf->Ln(15);
 
-        // Tabla de calificaciones
-        $pdf->SetFont('Arial', 'B', 10);
-        $pdf->Cell(70, 7, 'Materia', 1, 0, 'C');
-        $pdf->Cell(20, 7, '1° P', 1, 0, 'C');
-        $pdf->Cell(20, 7, '2° P', 1, 0, 'C');
-        $pdf->Cell(20, 7, '3° P', 1, 1, 'C');
+        // Tabla
+        $pdf->SetFont('Arial', 'B', 11);
+        $pdf->SetFillColor(0, 102, 204);
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->SetDrawColor(0, 51, 153);
+
+        $pdf->Cell(85, 8, 'Materia', 1, 0, 'C', true);
+        $pdf->Cell(25, 8, '1° P', 1, 0, 'C', true);
+        $pdf->Cell(25, 8, '2° P', 1, 0, 'C', true);
+        $pdf->Cell(25, 8, '3° P', 1, 1, 'C', true);
 
         $pdf->SetFont('Arial', '', 10);
+        $pdf->SetTextColor(0, 0, 0);
         foreach ($materias as $mat) {
-            $calif = $calificaciones[$mat['id_materia']] ?? null;
-            $p1 = (!empty($calif['primer_parcial']) && $calif['primer_parcial'] !== '0') ? $calif['primer_parcial'] : 'N/A';
-            $p2 = (!empty($calif['segundo_parcial']) && $calif['segundo_parcial'] !== '0') ? $calif['segundo_parcial'] : 'N/A';
-            $p3 = (!empty($calif['tercer_parcial']) && $calif['tercer_parcial'] !== '0') ? $calif['tercer_parcial'] : 'N/A';
+            $calif = $calificaciones[$mat['id_materia']] ?? [];
+            $p1 = $calif['primer_parcial'] ?? 'NA';
+            $p2 = $calif['segundo_parcial'] ?? 'NA';
+            $p3 = $calif['tercer_parcial'] ?? 'NA';
 
-            $pdf->Cell(70, 6, utf8_decode($mat['nombre_materia']), 1);
-            $pdf->Cell(20, 6, $p1, 1, 0, 'C');
-            $pdf->Cell(20, 6, $p2, 1, 0, 'C');
-            $pdf->Cell(20, 6, $p3, 1, 1, 'C');
+            $pdf->Cell(85, 7, utf8_decode($mat['nombre_materia']), 1);
+            $pdf->Cell(25, 7, $p1, 1, 0, 'C');
+            $pdf->Cell(25, 7, $p2, 1, 0, 'C');
+            $pdf->Cell(25, 7, $p3, 1, 1, 'C');
         }
 
         $pdf->Ln(10);
 
-        // Firmas
-        $pdf->SetFont('Arial', 'B', 10);
-        $pdf->Cell(0, 6, utf8_decode('FIRMAS DE ENTERADO POR PARCIAL'), 0, 1, 'C');
-        $pdf->Ln(5);
+       // ================= FIRMAS =================
+$pdf->SetFont('Arial', 'B', 11);
+$pdf->Cell(0, 8, utf8_decode('FIRMAS DE ENTERADO'), 0, 1, 'C');
+$pdf->Ln(4);
 
-        $pdf->SetFont('Arial', '', 9);
-        $parciales = ['Primer Parcial', 'Segundo Parcial', 'Tercer Parcial'];
-        for ($i = 0; $i < 3; $i++) {
-            $pdf->Cell(0, 6, utf8_decode("__________________________________________________________"), 0, 1, 'C');
-            $pdf->Cell(0, 6, utf8_decode("Firma de Enterado " . $parciales[$i]), 0, 1, 'C');
-            $pdf->Ln(8);
-        }
+$pdf->SetFont('Arial', '', 9);
+
+$firmas = ['Primer Parcial', 'Segundo Parcial', 'Tercer Parcial'];
+
+foreach ($firmas as $f) {
+    $pdf->Cell(0, 6, '________________', 0, 1, 'C');
+    $pdf->Cell(0, 6, utf8_decode("Firma - $f"), 0, 1, 'C');
+    $pdf->Ln(4);
+}
 
         // Pie
-        $pdf->SetY(-20);
+        $pdf->SetY(-25);
         $pdf->SetFont('Arial', 'I', 8);
-        $pdf->Cell(0, 10, utf8_decode('Documento generado automáticamente – ' . date('d/m/Y H:i')), 0, 0, 'C');
+        $pdf->SetTextColor(120,120,120);
+        $pdf->Cell(0, 8, utf8_decode('Documento oficial • Generado el ' . date('d/m/Y H:i')), 0, 0, 'C');
 
-        // Agregar PDF al ZIP
+        // Agregar al ZIP
         $filename = "Boleta_" . preg_replace('/[^a-zA-Z0-9_]/', '_', $nombre_completo) . ".pdf";
         $zip->addFromString($filename, $pdf->Output('', 'S'));
     }
 
     $zip->close();
 
-    // Descargar ZIP
+    // Descargar
     header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="Boletas_' . urlencode($grado . '_' . $grupo) . '.zip"');
     readfile($tmp_zip);

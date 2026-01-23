@@ -130,10 +130,10 @@ $pdf->SetFillColor(0, 102, 204);
 $pdf->SetTextColor(255, 255, 255);
 $pdf->SetDrawColor(0, 51, 153);
 
-$pdf->Cell(85, 8, 'Materia', 1, 0, 'C', true);
-$pdf->Cell(25, 8, '1° P', 1, 0, 'C', true);
-$pdf->Cell(25, 8, '2° P', 1, 0, 'C', true);
-$pdf->Cell(25, 8, '3° P', 1, 1, 'C', true);
+$pdf->Cell(85, 10, 'Materia', 1, 0, 'C', true);
+$pdf->Cell(25, 10, '1° P', 1, 0, 'C', true);
+$pdf->Cell(25, 10, '2° P', 1, 0, 'C', true);
+$pdf->Cell(25, 10, '3° P', 1, 1, 'C', true);
 
 // --- Filas ---
 $pdf->SetFont('Arial', '', 10);
@@ -147,28 +147,28 @@ foreach ($materias as $mat) {
     $p2 = $calif['segundo_parcial'] ?? 'NA';
     $p3 = $calif['tercer_parcial']  ?? 'NA';
 
-    $pdf->Cell(85, 7, utf8_decode($mat['nombre_materia']), 1);
-    $pdf->Cell(25, 7, $p1, 1, 0, 'C');
-    $pdf->Cell(25, 7, $p2, 1, 0, 'C');
-    $pdf->Cell(25, 7, $p3, 1, 1, 'C');
+    $pdf->Cell(85, 9, utf8_decode($mat['nombre_materia']), 1);
+    $pdf->Cell(25, 9, $p1, 1, 0, 'C');
+    $pdf->Cell(25, 9, $p2, 1, 0, 'C');
+    $pdf->Cell(25, 9, $p3, 1, 1, 'C');
 }
 
 $pdf->Ln(10); // Espacio antes de las firmas
 
-// === Firmas de enterado ===
-$pdf->SetFont('Arial', 'B', 12);
-$pdf->Cell(0, 10, utf8_decode('FIRMAS DE ENTERADO POR PARCIAL'), 0, 1, 'C');
-$pdf->Ln(10);
+// ================= FIRMAS =================
+$pdf->SetFont('Arial', 'B', 11);
+$pdf->Cell(0, 8, utf8_decode('FIRMAS DE ENTERADO'), 0, 1, 'C');
+$pdf->Ln(4);
 
-$pdf->SetFont('Arial', '', 10);
-$parciales = ['Primer Parcial', 'Segundo Parcial', 'Tercer Parcial'];
+$pdf->SetFont('Arial', '', 9);
 
-foreach ($parciales as $p) {
-    $pdf->Cell(0, 8, utf8_decode("__________________________________________________________"), 0, 1, 'C');
-    $pdf->Cell(0, 8, utf8_decode("Firma de Enterado - $p"), 0, 1, 'C');
-    $pdf->Ln(15); // Más espacio entre firmas
+$firmas = ['Primer Parcial', 'Segundo Parcial', 'Tercer Parcial'];
+
+foreach ($firmas as $f) {
+    $pdf->Cell(0, 6, '________________', 0, 1, 'C');
+    $pdf->Cell(0, 6, utf8_decode("Firma - $f"), 0, 1, 'C');
+    $pdf->Ln(4);
 }
-
 // === Pie de página ===
 $pdf->SetY(-25);
 $pdf->SetFont('Arial', 'I', 8);
