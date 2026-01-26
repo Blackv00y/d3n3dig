@@ -1,15 +1,23 @@
 <?php
-// generar_zip_boletas.php — Genera ZIP con boletas en estilo moderno
+// generar_zip_boletas.php — Corregido para sincronizar calificaciones
 session_start();
 if (!isset($_SESSION['id_credencial'])) exit;
 
-// Verificar que ZipArchive esté disponible
 if (!class_exists('ZipArchive')) {
     die("Error: La extensión ZIP de PHP no está habilitada. Actívela en php.ini (extension=zip) y reinicia Apache.");
 }
 
 include '../funciones/conexQRConejo.php';
 $secretKey = 'your-secret-key';
+
+// --- Función para desencriptar (debe ir al inicio) ---
+function decryptData($data, $key) {
+    if (empty($data)) return '';
+    $parts = explode('::', base64_decode($data), 2);
+    if (count($parts) !== 2) return '—';
+    [$cipher, $iv] = $parts;
+    return openssl_decrypt($cipher, 'aes-256-cbc', $key, 0, base64_decode($iv));
+}
 
 $grado = $_GET['grado'] ?? '';
 $grupo = $_GET['grupo'] ?? '';
@@ -27,7 +35,7 @@ $id_escuela = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt))['id_escuela'];
 // --- Obtener alumnos del grupo ---
 $alumnos = [];
 $stmt = mysqli_prepare($conexion, "
-    SELECT id_credencial, nombre_credencial, apellidos_credencial, ruta_foto, ruta_foto2
+    SELECT id_credencial, nombre_credencial, apellidos_credencial, ruta_foto, ruta_foto2, id_escuela
     FROM credenciales
     WHERE grado_credencial = ? AND grupo_credencial = ? AND turno_credencial = ?
       AND id_escuela = ? AND nivel_usuario = 7
@@ -41,15 +49,6 @@ while ($row = mysqli_fetch_assoc($result)) {
 }
 
 if (empty($alumnos)) die("No hay alumnos en este grupo.");
-
-// --- Función para desencriptar ---
-function decryptData($data, $key) {
-    if (empty($data)) return '';
-    $parts = explode('::', base64_decode($data), 2);
-    if (count($parts) !== 2) return '—';
-    [$cipher, $iv] = $parts;
-    return openssl_decrypt($cipher, 'aes-256-cbc', $key, 0, base64_decode($iv));
-}
 
 // --- Cargar FPDF ---
 require_once 'fpdf/fpdf.php';
@@ -66,9 +65,9 @@ $tmp_zip = tempnam(sys_get_temp_dir(), 'boletas_') . '.zip';
 if ($zip->open($tmp_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
 
     foreach ($alumnos as $alum) {
-        // --- Datos básicos ---
         $nombre_completo = $alum['nombre_credencial'] . ' ' . $alum['apellidos_decrypted'];
         $id_alumno = $alum['id_credencial'];
+        $id_escuela_alum = $alum['id_escuela']; // Asegura tener id_escuela
 
         // --- Fotos ---
         $foto1 = !empty($alum['ruta_foto']) ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum['ruta_foto'], '/') : '';
@@ -91,12 +90,12 @@ if ($zip->open($tmp_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
               AND am.id_escuela = ?
             ORDER BY m.N_orden_materia
         ");
-        mysqli_stmt_bind_param($stmt, "sssi", $grado, $grupo, $turno, $id_escuela);
+        mysqli_stmt_bind_param($stmt, "sssi", $grado, $grupo, $turno, $id_escuela_alum);
         mysqli_stmt_execute($stmt);
         $result = mysqli_stmt_get_result($stmt);
         while ($row = mysqli_fetch_assoc($result)) $materias[] = $row;
 
-        // --- Calificaciones del alumno ---
+        // --- Calificaciones del alumno (con conversión a entero) ---
         $calificaciones = [];
         $stmt = mysqli_prepare($conexion, "
             SELECT id_materia, primer_parcial, segundo_parcial, tercer_parcial
@@ -107,7 +106,9 @@ if ($zip->open($tmp_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
         mysqli_stmt_execute($stmt);
         $result = mysqli_stmt_get_result($stmt);
         while ($row = mysqli_fetch_assoc($result)) {
-            $calificaciones[$row['id_materia']] = $row;
+            // 👇 Conversión a entero para evitar problemas de tipo
+            $id_materia = (int)$row['id_materia'];
+            $calificaciones[$id_materia] = $row;
         }
 
         // --- Generar PDF ---
@@ -159,7 +160,9 @@ if ($zip->open($tmp_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
         $pdf->SetFont('Arial', '', 10);
         $pdf->SetTextColor(0, 0, 0);
         foreach ($materias as $mat) {
-            $calif = $calificaciones[$mat['id_materia']] ?? [];
+            // 👇 Conversión a entero para coincidir con la clave de $calificaciones
+            $id_materia = (int)$mat['id_materia'];
+            $calif = $calificaciones[$id_materia] ?? [];
             $p1 = $calif['primer_parcial'] ?? 'NA';
             $p2 = $calif['segundo_parcial'] ?? 'NA';
             $p3 = $calif['tercer_parcial'] ?? 'NA';
@@ -172,20 +175,17 @@ if ($zip->open($tmp_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
 
         $pdf->Ln(10);
 
-       // ================= FIRMAS =================
-$pdf->SetFont('Arial', 'B', 11);
-$pdf->Cell(0, 8, utf8_decode('FIRMAS DE ENTERADO'), 0, 1, 'C');
-$pdf->Ln(4);
+       /* ================= FIRMAS ================= */
+$pdf->Ln(14);
+$pdf->SetFont('Arial','',9);
 
-$pdf->SetFont('Arial', '', 9);
+$pdf->Cell(60,5,'________',0,0,'C');
+$pdf->Cell(60,5,'________',0,0,'C');
+$pdf->Cell(60,5,'________',0,1,'C');
 
-$firmas = ['Primer Parcial', 'Segundo Parcial', 'Tercer Parcial'];
-
-foreach ($firmas as $f) {
-    $pdf->Cell(0, 6, '________________', 0, 1, 'C');
-    $pdf->Cell(0, 6, utf8_decode("Firma - $f"), 0, 1, 'C');
-    $pdf->Ln(4);
-}
+$pdf->Cell(60,5,'Parcial 1',0,0,'C');
+$pdf->Cell(60,5,'Parcial 2',0,0,'C');
+$pdf->Cell(60,5,'Parcial 3',0,1,'C');
 
         // Pie
         $pdf->SetY(-25);
@@ -200,7 +200,6 @@ foreach ($firmas as $f) {
 
     $zip->close();
 
-    // Descargar
     header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="Boletas_' . urlencode($grado . '_' . $grupo) . '.zip"');
     readfile($tmp_zip);
