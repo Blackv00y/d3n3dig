@@ -1,4 +1,5 @@
 <?php
+// generar_pdf_individual.php — Diseño tipo SEP (solo sección visual modificada)
 session_start();
 if (!isset($_SESSION['id_credencial'])) die("Acceso denegado.");
 
@@ -7,19 +8,29 @@ $secretKey = 'your-secret-key';
 
 $id_alumno = $_GET['id'] ?? die('ID no válido');
 
-/* ================= FUNCION DESENCRIPTAR ================= */
+// --- Función para desencriptar ---
 function decryptData($data, $key) {
     if (empty($data)) return '';
     $parts = explode('::', base64_decode($data), 2);
     if (count($parts) !== 2) return '—';
-    return openssl_decrypt($parts[0], 'aes-256-cbc', $key, 0, base64_decode($parts[1]));
+    [$cipher, $iv] = $parts;
+    return openssl_decrypt($cipher, 'aes-256-cbc', $key, 0, base64_decode($iv));
 }
 
-/* ================= DATOS ALUMNO ================= */
+
+// --- Datos del alumno ---
 $stmt = mysqli_prepare($conexion, "
-    SELECT c.nombre_credencial, c.apellidos_credencial, c.ruta_foto, c.ruta_foto2,
-           c.grado_credencial, c.grupo_credencial, c.turno_credencial,
-           c.id_escuela, e.nombre_escuela
+    SELECT 
+        c.nombre_credencial, 
+        c.apellidos_credencial, 
+        c.ruta_foto, 
+        c.ruta_foto2,
+        c.grado_credencial, 
+        c.grupo_credencial, 
+        c.turno_credencial, 
+        c.id_escuela,
+        e.nombre_escuela,
+        e.direccion
     FROM credenciales c
     JOIN escuelas e ON c.id_escuela = e.id_escuela
     WHERE c.id_credencial = ?
@@ -27,21 +38,31 @@ $stmt = mysqli_prepare($conexion, "
 mysqli_stmt_bind_param($stmt, "i", $id_alumno);
 mysqli_stmt_execute($stmt);
 $alum = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+
 if (!$alum) die("Alumno no encontrado.");
 
-$nombre_completo = $alum['nombre_credencial'].' '.decryptData($alum['apellidos_credencial'], $secretKey);
-$grado = $alum['grado_credencial'];
-$grupo = $alum['grupo_credencial'];
-$turno = $alum['turno_credencial'];
+$direccion = $alum['direccion'] ?? 'Dirección no disponible';
+
+$nombre_completo = $alum['nombre_credencial'] . ' ' . decryptData($alum['apellidos_credencial'], $secretKey);
+$grado   = $alum['grado_credencial'];
+$grupo   = $alum['grupo_credencial'];
+$turno   = $alum['turno_credencial'];
 $escuela = $alum['nombre_escuela'];
 
-/* ================= FOTO ================= */
-$foto1 = $_SERVER['DOCUMENT_ROOT'].'/sistema_escolar/'.ltrim($alum['ruta_foto'],'/');
-$foto2 = $_SERVER['DOCUMENT_ROOT'].'/sistema_escolar/'.ltrim($alum['ruta_foto2'],'/');
-$foto_default = __DIR__.'/fpdf/foto_placeholder.png';
-$foto_usar = file_exists($foto1) ? $foto1 : (file_exists($foto2) ? $foto2 : $foto_default);
+// ================= FOTO =================
+$foto1 = !empty($alum['ruta_foto'])  
+    ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum['ruta_foto'], '/')  
+    : '';
 
-/* ================= MATERIAS ================= */
+$foto2 = !empty($alum['ruta_foto2']) 
+    ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum['ruta_foto2'], '/') 
+    : '';
+
+$foto_default = __DIR__ . '/fpdf/R.png';
+
+$foto = file_exists($foto1) ? $foto1 : (file_exists($foto2) ? $foto2 : $foto_default);
+
+// --- Materias ---
 $materias = [];
 $stmt = mysqli_prepare($conexion, "
     SELECT m.id_materia, m.nombre_materia
@@ -55,10 +76,10 @@ $stmt = mysqli_prepare($conexion, "
 ");
 mysqli_stmt_bind_param($stmt, "sssi", $grado, $grupo, $turno, $alum['id_escuela']);
 mysqli_stmt_execute($stmt);
-$res = mysqli_stmt_get_result($stmt);
-while ($r = mysqli_fetch_assoc($res)) $materias[] = $r;
+$result = mysqli_stmt_get_result($stmt);
+while ($row = mysqli_fetch_assoc($result)) $materias[] = $row;
 
-/* ================= CALIFICACIONES ================= */
+// --- Calificaciones ---
 $calificaciones = [];
 $stmt = mysqli_prepare($conexion, "
     SELECT id_materia, primer_parcial, segundo_parcial, tercer_parcial
@@ -67,99 +88,269 @@ $stmt = mysqli_prepare($conexion, "
 ");
 mysqli_stmt_bind_param($stmt, "i", $id_alumno);
 mysqli_stmt_execute($stmt);
-$res = mysqli_stmt_get_result($stmt);
-while ($r = mysqli_fetch_assoc($res)) {
-    $calificaciones[(int)$r['id_materia']] = $r;
+$result = mysqli_stmt_get_result($stmt);
+while ($row = mysqli_fetch_assoc($result)) {
+    $id_materia = (int)$row['id_materia'];
+    $calificaciones[$id_materia] = $row;
 }
 
-/* ================= PDF ================= */
+// --- FPDF ---
 require_once 'fpdf/fpdf.php';
-$pdf = new FPDF('P','mm','Letter');
-$pdf->SetMargins(12,12,12);
-$pdf->SetAutoPageBreak(false);
+
+class BoletaPDF extends FPDF {
+    function Header() {}
+    function Footer() {}
+}
+
+$pdf = new BoletaPDF('P', 'mm', 'Letter');
+$pdf->SetMargins(12, 12, 12);
+$pdf->SetAutoPageBreak(true, 20);
 $pdf->AddPage();
 
-/* ===== BARRA SUPERIOR ===== */
-$pdf->SetFillColor(0,102,204);
-$pdf->Rect(0,0,216,18,'F');
-$pdf->SetFont('Arial','B',14);
-$pdf->SetTextColor(255);
-$pdf->SetY(6);
-$pdf->Cell(0,6,utf8_decode('BOLETA DE CALIFICACIONES'),0,1,'C');
-$pdf->SetTextColor(0);
-$pdf->Ln(12);
-
-/// === Datos del alumno (izquierda) y foto (derecha) ===
-$y_datos = $pdf->GetY();
-$x_foto = 160; // Foto a la derecha
-$ancho_foto = 35;
-$alto_foto = 40;
-
-// Foto
-if (file_exists($foto_usar)) {
-    list($w, $h) = getimagesize($foto_usar);
-    $ratio = $h / $w;
-    $alto_real = min($alto_foto, $ancho_foto * $ratio);
-    $pdf->Image($foto_usar, $x_foto, $y_datos, $ancho_foto, $alto_real);
-    // Marco alrededor de la foto
-    $pdf->Rect($x_foto, $y_datos, $ancho_foto, $alto_real);
-}
-// Datos del alumno
-$pdf->SetXY(15, $y_datos);
+// === ENCABEZADO OFICIAL ===
+$pdf->SetFont('Arial', 'B', 10);
+$pdf->Cell(0, 5, utf8_decode('PRUEBA DE BOLETA'), 0, 1, 'C');
+$pdf->SetFont('Arial', 'B', 14);
+$pdf->Cell(0, 6, utf8_decode('SISTEMA EDUCATIVO DENEDIG'), 0, 1, 'C');
+$pdf->SetFont('Arial', 'B', 12);
+$pdf->Cell(0, 6, utf8_decode('REPORTE DE EVALUACIÓN'), 0, 1, 'C');
 $pdf->SetFont('Arial', '', 10);
-$pdf->Cell(0, 6, utf8_decode("Escuela: $escuela"), 0, 1);
-$pdf->Cell(0, 6, utf8_decode("Grado: $grado - Grupo: $grupo - Turno: $turno"), 0, 1);
-$pdf->Cell(0, 6, utf8_decode("Estudiante: $nombre_completo"), 0, 1);
-$pdf->Ln(18);
-/* ================= TABLA ================= */
-$pdf->SetFont('Arial','B',9);
-$pdf->SetFillColor(220,235,250);
-$pdf->SetDrawColor(0,102,204);
+$pdf->Cell(0, 5, utf8_decode('1er GRADO DE EDUCACIÓN SECUNDARIA  -  CICLO ESCOLAR 2025-2026'), 0, 1, 'C');
+$pdf->Ln(15);
 
-$pdf->Cell(95,8,utf8_decode('Módulo'),1,0,'C',true);
-$pdf->Cell(15,8,'1°',1,0,'C',true);
-$pdf->Cell(15,8,'2°',1,0,'C',true);
-$pdf->Cell(15,8,'3°',1,0,'C',true);
-$pdf->Cell(25,8,'Acredita',1,1,'C',true);
+// === DATOS DEL ALUMNO ===
+$pdf->SetFont('Arial', 'B', 10);
+$pdf->SetFillColor(220, 220, 220);
+$pdf->Cell(0, 6, utf8_decode('DATOS DEL(AL) ALUMNO(A)'), 0, 1, 'C',true);
+$pdf->SetFont('Arial', '', 9);
 
-$pdf->SetFont('Arial','',9);
+$pdf->Ln(10);
 
-foreach ($materias as $m) {
-    $c = $calificaciones[$m['id_materia']] ?? [];
-    $p1 = $c['primer_parcial'] ?? '—';
-    $p2 = $c['segundo_parcial'] ?? '—';
-    $p3 = $c['tercer_parcial'] ?? '—';
+$apellidos = explode(' ', decryptData($alum['apellidos_credencial'], $secretKey));
+$apellido1 = $apellidos[0] ?? '';
+$apellido2 = $apellidos[1] ?? '';
 
-    $ac = (is_numeric($p3) && $p3 >= 7) ? 'ACREDITA' : 'NO ACREDITA';
-    $pdf->Cell(95,7,utf8_decode($m['nombre_materia']),1);
-    $pdf->Cell(15,7,$p1,1,0,'C');
-    $pdf->Cell(15,7,$p2,1,0,'C');
-    $pdf->Cell(15,7,$p3,1,0,'C');
-    $pdf->SetTextColor($ac==='ACREDITA'?0:200,$ac==='ACREDITA'?120:0,0);
-    $pdf->Cell(25,7,$ac,1,1,'C');
-    $pdf->SetTextColor(0);
+// ================= DATOS =================
+$primer_apellido  = strtoupper($apellido1);
+$segundo_apellido = strtoupper($apellido2);
+$nombres          = strtoupper($alum['nombre_credencial']);
+
+$x = 12;
+$y = $pdf->GetY();
+
+$foto_ancho = 30;
+$foto_alto  = 35;
+$separacion = 5;
+
+$ancho_nombres = 190 - $foto_ancho - $separacion;
+
+// ====== TÍTULOS ======
+$pdf->SetFont('Arial', '', 9);
+$pdf->SetXY($x, $y);
+$pdf->Cell(45, 4, utf8_decode('PRIMER APELLIDO'), 0, 0, 'C');
+$pdf->Cell(45, 4, utf8_decode('SEGUNDO APELLIDO'), 0, 0, 'C');
+$pdf->Cell($ancho_nombres - 90, 4, utf8_decode('NOMBRE(S)'), 0, 0, 'C');
+
+// ====== FOTO ======
+$foto_y = $y -8;
+
+
+// Imagen
+// Marco de la foto
+$pdf->Rect(
+$x + $ancho_nombres + $separacion,
+$foto_y,
+$foto_ancho,
+$foto_alto
+);
+$pdf->Image(
+    $foto,
+    $x + $ancho_nombres + $separacion,
+    $foto_y,
+    $foto_ancho,
+    $foto_alto
+);
+
+// ====== LÍNEA ======
+$pdf->Line($x, $y + 6, $x + $ancho_nombres, $y + 6);
+// ====== TEXTO ======
+$pdf->SetFont('Arial', '', 9);
+$pdf->SetXY($x, $y + 7);
+$pdf->Cell(45, 6, utf8_decode($primer_apellido), 0, 0, 'C');
+$pdf->Cell(45, 6, utf8_decode($segundo_apellido), 0, 0, 'C');
+$pdf->Cell($ancho_nombres - 90, 6, utf8_decode($nombres), 0, 1, 'C');
+
+$pdf->Ln(15);
+
+// === DATOS DE LA ESCUELA ===
+$pdf->SetFont('Arial', 'B', 10);
+$pdf->Cell(0, 6, utf8_decode('DATOS DE LA ESCUELA'), 0, 1, 'C',true);
+$pdf->Ln(4);
+$pdf->SetFont('Arial', '', 9);
+
+$x = 12;
+$y = $pdf->GetY();
+
+// Línea superior
+$pdf->Line($x, $y+5, $x +190, $y+5);
+
+// Texto
+$pdf->SetFont('Arial', '', 9);
+$pdf->SetXY($x, $y );
+$pdf->Cell(60, 4, utf8_decode('NOMBRE DE LA ESCUELA'), 0, 0, 'C');
+$pdf->Cell(100, 4, utf8_decode('DIRECCIÓN'), 0, 1, 'C');
+$pdf->SetFont('Arial', '', 9);
+$pdf->SetXY($x, $y + 7);
+$pdf->Cell(100, 6, utf8_decode($escuela), 0, 0);
+$pdf->Cell(100, 6, utf8_decode($direccion), 0, 1);
+
+$pdf->Ln(8);
+
+// ================== TABLA DE CALIFICACIONES ==================
+$pdf->SetFont('Arial', 'B', 9);
+$pdf->SetFillColor(220, 220, 220);
+$pdf->Cell(90, 7, utf8_decode('Materias'), 1, 0, 'C', true);
+$pdf->Cell(15, 7, 'I', 1, 0, 'C', true);
+$pdf->Cell(15, 7, 'II', 1, 0, 'C', true);
+$pdf->Cell(15, 7, 'III', 1, 0, 'C', true);
+$pdf->Cell(30, 7, utf8_decode('PROMEDIO FINAL'), 1, 1, 'C', true);
+
+$pdf->SetFont('Arial', '', 9);
+
+function calcularPromedio($p1, $p2, $p3) {
+    if (!is_numeric($p1) || !is_numeric($p2) || !is_numeric($p3)) {
+        return '--';
+    }
+
+    $promedio = ($p1 + $p2 + $p3) / 3;
+    $entero   = floor($promedio);
+    $decimal  = $promedio - $entero;
+
+    return ($decimal >= 0.6) ? $entero + 1 : $entero;
 }
+function setColorPorPromedio($pdf, $prom) {
+    if (!is_numeric($prom)) {
+        $pdf->SetTextColor(0, 0, 0);
+        return;
+    }
 
-$pdf->Ln(12);
+    if ($prom > 9) {
+        $pdf->SetTextColor(25, 135, 84); // verde
+    } elseif ($prom <= 6) {
+        $pdf->SetTextcolor(220, 53, 69); // rojo
+    } else {
+        $pdf->SetTextColor(0, 0, 0); // negro
+    }
+}
+foreach ($materias as $mat) {
+    $id_materia = (int)$mat['id_materia'];
+    $calif = $calificaciones[$id_materia] ?? [];
 
-// ================= FIRMAS =================
-/* ================= FIRMAS ================= */
-$pdf->Ln(14);
-$pdf->SetFont('Arial','',9);
+    $p1 = $calif['primer_parcial'] ?? '--';
+    $p2 = $calif['segundo_parcial'] ?? '--';
+    $p3 = $calif['tercer_parcial'] ?? '--';
 
-$pdf->Cell(60,5,'________',0,0,'C');
-$pdf->Cell(60,5,'________',0,0,'C');
-$pdf->Cell(60,5,'________',0,1,'C');
+    $prom = calcularPromedio($p1, $p2, $p3);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Cell(90, 6, utf8_decode($mat['nombre_materia']), 1);
+    $pdf->Cell(15, 6, $p1, 1, 0, 'C');
+    $pdf->Cell(15, 6, $p2, 1, 0, 'C');
+    $pdf->Cell(15, 6, $p3, 1, 0, 'C');
+    setColorPorPromedio($pdf, $prom);//Llamamos a la funcion para los colores
+    $pdf->SetFont('Arial', 'B', 10);//cambia el ancho de la letra en el promedio
+    $pdf->Cell(30, 6, $prom, 1, 1, 'C');
+    $pdf->SetFont('Arial', '', 9);//regresa el tamaño normal
+    $pdf->SetTextColor(0, 0, 0); // reset
+}
+/**foreach ($materias as $mat) {
+    $id_materia = (int)$mat['id_materia'];
+    $calif = $calificaciones[$id_materia] ?? [];
+    
+    $p1 = $calif['primer_parcial'] ?? '—';
+    $p2 = $calif['segundo_parcial'] ?? '—';
+    $p3 = $calif['tercer_parcial'] ?? '—';
+    
+    // Logica para sacar el promedio y sea redondeado
+    $prom = '—';
 
-$pdf->Cell(60,5,'Parcial 1',0,0,'C');
-$pdf->Cell(60,5,'Parcial 2',0,0,'C');
-$pdf->Cell(60,5,'Parcial 3',0,1,'C');
-/* ================= PIE ================= */
-$pdf->SetY(-15);
-$pdf->SetFont('Arial','I',7);
-$pdf->SetTextColor(120);
-$pdf->Cell(0,5,utf8_decode('Documento oficial • '.date('d/m/Y')),0,0,'C');
+if (is_numeric($p1) && is_numeric($p2) && is_numeric($p3)) {
+    $promedio = ($p1 + $p2 + $p3) / 3;
 
-$pdf->Output('I','Boleta_'.$id_alumno.'.pdf');
+    $entero = floor($promedio);
+    $decimal = $promedio - $entero;
+
+    if ($decimal >= 0.6) {
+        $prom = $entero + 1;
+    } else {
+        $prom = $entero;
+    }
+    // Color según la calificación
+    if ($prom > 7) {
+    $pdf->SetTextColor(25, 135, 84); //verde
+    } elseif ($prom == 6) {
+    $pdf->SetTextColor(220, 53, 69); // rojo
+    } else {
+    $pdf->SetTextColor(0, 0, 0); // negro
+    }
+}
+    
+    $pdf->Cell(90, 6, utf8_decode($mat['nombre_materia']), 1);
+    $pdf->Cell(15, 6, $p1, 1, 0, 'C');
+    $pdf->Cell(15, 6, $p2, 1, 0, 'C');
+    $pdf->Cell(15, 6, $p3, 1, 0, 'C');
+    $pdf->Cell(30, 6, $prom, 1, 1, 'C');
+}
+**/
+$pdf->Ln(8);
+
+// === PROMEDIO FINAL DE GRADO ===
+$pdf->SetFont('Arial', 'B', 10);
+$pdf->Cell(100, 6, utf8_decode('PROMEDIO FINAL DE GRADO ESCOLAR'), 1, 0, 'C', true);
+$pdf->Cell(30, 6, '8.1', 1, 1, 'C', true); // Calcula si lo deseas
+
+
+$pdf->Ln(10);
+
+// === FIRMA DE TUTORÍA ===
+$pdf->SetFont('Arial', 'B', 10);
+$pdf->SetFillColor(220, 220, 220);
+$pdf->Cell(0, 6, utf8_decode('FIRMA DE ENTERADO POR PARCIAL'), 0, 1, 'C', true);
+$pdf->Ln(4);
+
+// Ancho de cada columna
+$ancho = 60;
+
+// Encabezados
+$pdf->SetFont('Arial', 'B', 9);
+$pdf->Cell($ancho, 6, utf8_decode('Primer Parcial'), 1, 0, 'C',true);
+$pdf->Cell($ancho, 6, utf8_decode('Segundo Parcial'), 1, 0, 'C',true);
+$pdf->Cell($ancho, 6, utf8_decode('Tercer Parcial'), 1, 1, 'C',true);
+
+// Espacio para firma
+$pdf->SetFont('Arial', '', 9);
+$pdf->Cell($ancho, 15, '', 1, 0, 'C');
+$pdf->Cell($ancho, 15, '', 1, 0, 'C');
+$pdf->Cell($ancho, 15, '', 1, 1, 'C');
+
+// Texto "Firma"
+$pdf->SetFillColor(230, 230 ,220 );
+$pdf->SetTextColor(250, 0, 0 );
+$pdf->Cell($ancho, 6, utf8_decode('Firma 1'), 1, 0, 'C',true);
+$pdf->Cell($ancho, 6, utf8_decode('Firma 2'), 1, 0, 'C',true);
+$pdf->Cell($ancho, 6, utf8_decode('Firma 3'), 1, 1, 'C',true);
+
+$pdf->Ln(8);
+
+// === PIE DE PÁGINA ===
+$pdf->SetTextColor(0, 0, 0);       // negro
+$pdf->SetFillColor(255, 255, 255); // fondo blanco
+$pdf->SetFont('Arial', 'I', 7);
+$pdf->SetTextColor(100, 100, 100);
+$pdf->Cell(0, 5, utf8_decode('Documento oficial - Generado el ' . date('d/m/Y H:i')), 0, 0, 'C');
+
+// Salida
+$filename = "Boleta_" . preg_replace('/[^a-zA-Z0-9_]/', '_', $nombre_completo) . ".pdf";
+$pdf->Output('I', $filename);
+
 mysqli_close($conexion);
 ?>
