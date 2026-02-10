@@ -114,6 +114,7 @@
     <div class="text-center mb-4">
         Escuela: <strong><?= htmlspecialchars($nombre_escuela) ?></strong><br>
         Grado: <strong><?= htmlspecialchars($grado) ?></strong> - Grupo: <strong><?= htmlspecialchars($grupo_romano) ?></strong> - Turno: <strong><?= htmlspecialchars($turno) ?></strong>
+        Total de alumnos: <strong><?= htmlspecialchars($total_alumnos) ?></strong> 
     </div>
 
     <!-- Tarjetas por alumno -->
@@ -148,7 +149,7 @@
                            class="backup-btn"
                            onclick="return confirm('¿Generar respaldo manual?\n\nSe guardará como Boleta_Manual_<?= $alum['id_credencial'] ?>.pdf');">
                             💾 Respaldar
-                        </a>
+                        ></a>
                     <?php endif; ?>
                 </div>
             </div>

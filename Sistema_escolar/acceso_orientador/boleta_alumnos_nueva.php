@@ -1,5 +1,5 @@
 <?php
-// boleta_alumnos_nueva.php — DISEÑO ORIGINAL + LÓGICA DE RESPALDO CONDICIONAL
+// boleta_alumnos_nueva.php — DISEÑO ORIGINAL + LÓGICA DE RESPALDO CONDICIONAL + CONTADOR DE ALUMNOS
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -34,6 +34,21 @@ $grupo = $_GET['grupo'] ?? '';
 $turno = $_GET['turno'] ?? '';
 
 if (!$grado || !$grupo || !$turno) die("Faltan parámetros.");
+
+// --- 3.1. CONTADOR DE ALUMNOS DEL GRUPO ACTUAL ---
+$stmt = mysqli_prepare($conexion, "
+    SELECT COUNT(*) as total_alumnos
+    FROM credenciales 
+    WHERE grado_credencial = ? 
+      AND grupo_credencial = ? 
+      AND turno_credencial = ? 
+      AND id_escuela = ? 
+      AND nivel_usuario = 7
+");
+mysqli_stmt_bind_param($stmt, "sssi", $grado, $grupo, $turno, $id_escuela);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$total_alumnos = mysqli_fetch_assoc($result)['total_alumnos'];
 
 // --- 4. Función desencriptar ---
 function decryptData($data, $key) {
