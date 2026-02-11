@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Boleta Moderna</title>
-<!--boleta_vista.php - DISEÑO ORIGINAL + BOTÓN RESPALDO MANUAL-->
+<!--boleta_vista.php - CON BOTÓN RESPALDO GRUPAL-->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -17,6 +17,46 @@
             font-weight: bold;
             margin-top: 3em;
         }
+        
+        /* CONTENEDOR DE INFO + BOTÓN RESPALDO GRUPAL */
+        .info-header-wrapper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 15px 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+        
+        .info-text {
+            flex: 1;
+            line-height: 1.6;
+        }
+        
+        /* Botón de respaldo grupal - verde */
+        .btn-backup-group {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            border: none;
+            color: white;
+            font-weight: bold;
+            padding: 10px 20px;
+            border-radius: 25px;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 0.9rem;
+            box-shadow: 0 3px 10px rgba(40, 167, 69, 0.3);
+            white-space: nowrap;
+            transition: all 0.3s;
+        }
+        .btn-backup-group:hover {
+            background: linear-gradient(135deg, #218838, #1ba87a);
+            color: white;
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.5);
+            transform: translateY(-2px);
+        }
+        
         .btn-download-all {
             display: block;
             width: 100%;
@@ -58,7 +98,7 @@
             border-radius: 10px 10px;
             margin-top: auto;
         }
-        /* Botón de respaldo manual - estilo discreto que combina con el diseño */
+        /* Botón de respaldo manual - estilo discreto */
         .backup-btn {
             background: rgba(255, 255, 255, 0.3);
             border: 1px solid rgba(255, 255, 255, 0.6);
@@ -85,36 +125,53 @@
             margin-left: 8px;
             font-weight: 600;
         }
-        .grades-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-            font-size: 0.9rem;
-        }
-        .grades-table th {
-            background-color: #f1f1f1;
-            padding: 8px;
-            text-align: left;
-            font-weight: bold;
-            border: 1px solid #ddd;
-        }
         .student-card{
             background: linear-gradient(to right, #0f6fff, #14f1f8);
         }
-        .grades-table td {
-            padding: 8px;
-            border: 1px solid #dddddd;
-            text-align: center;
+        
+        /* Mensaje de éxito */
+        .alert-success-custom {
+            background: linear-gradient(135deg, #d4edda, #c3e6cb);
+            border: 2px solid #28a745;
+            color: #155724;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.2);
         }
     </style>
 </head>
 <body>
 <div class="container">
+    <?php
+    // Mostrar mensaje de éxito si existe
+    if (isset($_GET['mensaje'])) {
+        $mensaje = htmlspecialchars($_GET['mensaje']);
+        echo "<div class='alert alert-success-custom' role='alert'>";
+        echo "✅ " . $mensaje;
+        echo "</div>";
+    }
+    ?>
+    
     <div class="header-title">Boleta de Calificaciones</div>
-    <div class="text-center mb-4">
-        Escuela: <strong><?= htmlspecialchars($nombre_escuela) ?></strong><br>
-        Grado: <strong><?= htmlspecialchars($grado) ?></strong> - Grupo: <strong><?= htmlspecialchars($grupo_romano) ?></strong> - Turno: <strong><?= htmlspecialchars($turno) ?></strong>
-        Total de alumnos: <strong><?= htmlspecialchars($total_alumnos) ?></strong> 
+    
+    <!-- INFO ESCOLAR + BOTÓN RESPALDO GRUPAL -->
+    <div class="info-header-wrapper">
+        <div class="info-text">
+            <strong>Escuela:</strong> <?= htmlspecialchars($nombre_escuela) ?><br>
+            <strong>Grado:</strong> <?= htmlspecialchars($grado) ?> | 
+            <strong>Grupo:</strong> <?= htmlspecialchars($grupo_romano) ?> | 
+            <strong>Turno:</strong> <?= htmlspecialchars($turno) ?> | 
+            <strong>Total de alumnos:</strong> <?= htmlspecialchars($total_alumnos) ?>
+        </div>
+        <div>
+            <a href="generar_respaldo_grupal.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>" 
+               class="btn-backup-group"
+               onclick="return confirm('¿Generar respaldo automático de todas las boletas completas del grupo?\n\n✓ Solo se generarán PDFs de alumnos con todos sus parciales capturados.\n✓ Los alumnos con boletas incompletas serán omitidos.\n\n¿Desea continuar?');">
+                💾 Generar Respaldo General
+            </a>
+        </div>
     </div>
 
     <!-- Tarjetas por alumno -->
@@ -149,7 +206,7 @@
                            class="backup-btn"
                            onclick="return confirm('¿Generar respaldo manual?\n\nSe guardará como Boleta_Manual_<?= $alum['id_credencial'] ?>.pdf');">
                             💾 Respaldar
-                        ></a>
+                        </a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -168,8 +225,9 @@
     <div class="alert alert-info" style="font-size: 0.9rem;">
         <strong>ℹ️ Información sobre Respaldos:</strong>
         <ul class="mb-0" style="font-size: 0.85rem;">
-            <li><strong>Respaldo Automático:</strong> Las boletas con todas las calificaciones capturadas se guardan automáticamente como <code>Boleta_Final_[ID].pdf</code></li>
-            <li><strong>Botón "Respaldar":</strong> Permite guardar manualmente boletas incompletas como <code>Boleta_Manual_[ID].pdf</code></li>
+            <li><strong>Respaldo General del Grupo:</strong> Genera PDFs automáticamente de <strong>todos los alumnos con boletas completas</strong> (todos los parciales capturados). Los alumnos con parciales faltantes son omitidos.</li>
+            <li><strong>Respaldo Automático Individual:</strong> Las boletas con todas las calificaciones capturadas se guardan automáticamente como <code>Boleta_Final_[ID].pdf</code></li>
+            <li><strong>Botón "Respaldar" Individual:</strong> Permite guardar manualmente boletas incompletas como <code>Boleta_Manual_[ID].pdf</code></li>
             <li><strong>Ubicación:</strong> <code>respaldos/boletas/<?= $id_escuela ?>/grupos/[Grado] [Grupo]/</code></li>
         </ul>
     </div>
