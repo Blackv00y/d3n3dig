@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Boleta Moderna</title>
-    <!-- boleta_vista.php — CON MODAL DE RESPALDO GRUPAL -->
+    <!-- boleta_vista.php — CON MODAL DE RESPALDO GRUPAL Y BARRA DE PROGRESO -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -129,6 +129,35 @@
             font-weight: 600;
             box-shadow: 0 2px 8px rgba(40, 167, 69, 0.2);
         }
+        
+        /* Estilos para la barra de progreso personalizada */
+        .progreso-container {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            margin: 0 auto;
+        }
+        .progreso-circular {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #1a355e;
+        }
+        .progress-custom {
+            height: 12px;
+            max-width: 350px;
+            margin: 0 auto;
+            border-radius: 50px;
+            background-color: #e9ecef;
+        }
+        .progress-bar-custom {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            border-radius: 50px;
+            transition: width 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -248,9 +277,8 @@
 
 <?php include 'footer_orientador.php'; ?>
 
-
 <!-- ================================================================
-     MODAL DE RESPALDO GRUPAL (Bootstrap 5)
+     MODAL DE RESPALDO GRUPAL CON BARRA DE PROGRESO
      ================================================================ -->
 <div class="modal fade" id="modalRespaldo" tabindex="-1"
      aria-labelledby="modalRespaldoLabel" aria-hidden="true"
@@ -271,10 +299,29 @@
             <!-- Cuerpo -->
             <div class="modal-body p-4">
 
-                <!-- Estado: cargando -->
-                <div id="respaldo-loading" class="text-center py-3">
-                    <div class="spinner-border text-primary" role="status"></div>
-                    <p class="mt-2 text-muted">Analizando el grupo...</p>
+                <!-- ========== ESTADO: CARGANDO CON PORCENTAJE ========== -->
+                <div id="respaldo-loading" class="text-center py-4">
+                    <!-- Círculo con porcentaje integrado -->
+                    <div class="progreso-container">
+                        <div class="spinner-border text-primary" style="width: 100px; height: 100px;" role="status"></div>
+                        <div id="porcentaje-texto" class="progreso-circular">0%</div>
+                    </div>
+                    
+                    <!-- Barra de progreso animada -->
+                    <div class="progress-custom progress mt-4">
+                        <div id="barra-progreso" class="progress-bar progress-bar-striped progress-bar-animated progress-bar-custom" 
+                             style="width: 0%;">
+                        </div>
+                    </div>
+                    
+                    <!-- Mensajes de estado dinámicos -->
+                    <p class="mt-4 fw-semibold fs-5" id="mensaje-progreso" style="color: #1a355e;">
+                        ⏳ Iniciando respaldo grupal...
+                    </p>
+                    
+                    <p class="text-muted small mb-0" id="detalle-progreso">
+                        Preparando análisis del grupo...
+                    </p>
                 </div>
 
                 <!-- Estado: error -->
@@ -349,16 +396,16 @@
     </div>
 </div><!-- /#modalRespaldo -->
 
-
 <!-- ================================================================
-     JAVASCRIPT DEL MODAL
+     JAVASCRIPT DEL MODAL CON BARRA DE PROGRESO
      ================================================================ -->
 <script>
 // Almacena los parámetros del grupo activo mientras el modal está abierto
 const _respaldo = { grado: '', grupo: '', turno: '' };
+let intervaloProgreso = null;
 
 /**
- * Abre el modal y lanza la verificación AJAX.
+ * Abre el modal y lanza la verificación AJAX con barra de progreso.
  * Se llama desde el botón "Generar Respaldo General".
  */
 function abrirModalRespaldo(grado, grupo, turno) {
@@ -366,20 +413,98 @@ function abrirModalRespaldo(grado, grupo, turno) {
     _respaldo.grupo = grupo;
     _respaldo.turno = turno;
 
-    // Resetear estado visual antes de abrir
-    document.getElementById('respaldo-loading').classList.remove('d-none');
-    document.getElementById('respaldo-error').classList.add('d-none');
-    document.getElementById('respaldo-resultados').classList.add('d-none');
-    document.getElementById('respaldo-acciones').classList.add('d-none');
-    // Restaurar btn-solo-listos por si quedó oculto de una apertura anterior
-    document.getElementById('btn-solo-listos').classList.remove('d-none');
-    document.getElementById('btn-todos').classList.remove('d-none');
+    // Resetear estado visual
+    resetearModal();
 
     // Abrir modal Bootstrap 5
     new bootstrap.Modal(document.getElementById('modalRespaldo')).show();
 
+    // Iniciar animación de progreso simulado
+    iniciarProgresoSimulado();
+
     // Disparar la consulta AJAX
     verificarGrupo(grado, grupo, turno);
+}
+
+/**
+ * Resetea el modal a su estado inicial
+ */
+function resetearModal() {
+    // Mostrar pantalla de carga
+    document.getElementById('respaldo-loading').classList.remove('d-none');
+    document.getElementById('respaldo-error').classList.add('d-none');
+    document.getElementById('respaldo-resultados').classList.add('d-none');
+    document.getElementById('respaldo-acciones').classList.add('d-none');
+    
+    // Restaurar botones
+    document.getElementById('btn-solo-listos')?.classList.remove('d-none');
+    document.getElementById('btn-todos')?.classList.remove('d-none');
+    
+    // Resetear progreso a 0%
+    actualizarProgreso(0, '⏳ Iniciando respaldo grupal...', 'Preparando análisis del grupo...');
+    
+    // Limpiar intervalo anterior si existe
+    if (intervaloProgreso) {
+        clearInterval(intervaloProgreso);
+        intervaloProgreso = null;
+    }
+}
+
+/**
+ * Inicia la simulación de progreso mientras se espera la respuesta del servidor
+ */
+function iniciarProgresoSimulado() {
+    let progreso = 0;
+    let pasoActual = 0;
+    
+    const pasos = [
+        { limite: 15, mensaje: '🔍 Analizando grupo...', detalle: 'Verificando alumnos registrados...' },
+        { limite: 30, mensaje: '📄 Revisando boletas...', detalle: 'Comprobando calificaciones por parcial...' },
+        { limite: 50, mensaje: '⚙️ Procesando información...', detalle: 'Calculando estadísticas del grupo...' },
+        { limite: 70, mensaje: '📊 Generando reporte...', detalle: 'Preparando resumen de estado...' },
+        { limite: 90, mensaje: '💾 Finalizando análisis...', detalle: 'Cargando resultados...' }
+    ];
+    
+    intervaloProgreso = setInterval(() => {
+        if (progreso < 95) {
+            // Incremento aleatorio para simular procesamiento real
+            progreso += Math.floor(Math.random() * 4) + 1;
+            if (progreso > 95) progreso = 95;
+            
+            // Actualizar mensaje según el progreso
+            while (pasoActual < pasos.length && progreso >= pasos[pasoActual].limite) {
+                actualizarProgreso(progreso, pasos[pasoActual].mensaje, pasos[pasoActual].detalle);
+                pasoActual++;
+            }
+            
+            actualizarProgreso(progreso);
+        }
+    }, 350);
+}
+
+/**
+ * Actualiza visualmente los elementos de progreso
+ */
+function actualizarProgreso(porcentaje, mensaje = null, detalle = null) {
+    // Actualizar texto del porcentaje
+    const porcentajeEl = document.getElementById('porcentaje-texto');
+    if (porcentajeEl) porcentajeEl.textContent = Math.round(porcentaje) + '%';
+    
+    // Actualizar barra de progreso
+    const barraEl = document.getElementById('barra-progreso');
+    if (barraEl) barraEl.style.width = porcentaje + '%';
+    
+    // Actualizar mensaje principal
+    if (mensaje) {
+        const mensajeEl = document.getElementById('mensaje-progreso');
+        if (mensajeEl) mensajeEl.textContent = mensaje;
+    }
+    
+    // Actualizar detalle
+    if (detalle) {
+        const detalleEl = document.getElementById('detalle-progreso');
+        if (detalleEl) detalleEl.textContent = detalle;
+    }
 }
 
 /**
@@ -397,10 +522,28 @@ function verificarGrupo(grado, grupo, turno) {
             return res.json();
         })
         .then(data => {
-            if (data.error) throw new Error(data.error);
-            renderizarResultados(data);
+            // Detener el progreso simulado
+            if (intervaloProgreso) {
+                clearInterval(intervaloProgreso);
+                intervaloProgreso = null;
+            }
+            
+            // Mostrar progreso completado
+            actualizarProgreso(100, '✅ Análisis completado exitosamente', 'Listo para generar respaldo');
+            
+            // Pequeño delay para mostrar el 100%
+            setTimeout(() => {
+                renderizarResultados(data);
+            }, 600);
         })
         .catch(err => {
+            // Limpiar intervalo en caso de error
+            if (intervaloProgreso) {
+                clearInterval(intervaloProgreso);
+                intervaloProgreso = null;
+            }
+            
+            // Ocultar pantalla de carga y mostrar error
             document.getElementById('respaldo-loading').classList.add('d-none');
             document.getElementById('respaldo-error-msg').textContent = err.message;
             document.getElementById('respaldo-error').classList.remove('d-none');
@@ -411,8 +554,10 @@ function verificarGrupo(grado, grupo, turno) {
  * Rellena el modal con los datos recibidos y ajusta los botones según el escenario.
  */
 function renderizarResultados(data) {
+    // Ocultar pantalla de carga
     document.getElementById('respaldo-loading').classList.add('d-none');
 
+    // Actualizar contadores
     document.getElementById('cnt-total').textContent      = data.total;
     document.getElementById('cnt-listos').textContent     = data.listos;
     document.getElementById('cnt-pendientes').textContent = data.pendientes;
@@ -449,6 +594,7 @@ function renderizarResultados(data) {
                          + `Elige cómo proceder:`;
     }
 
+    // Mostrar resultados y acciones
     document.getElementById('respaldo-resultados').classList.remove('d-none');
     document.getElementById('respaldo-acciones').classList.remove('d-none');
 }
@@ -465,10 +611,33 @@ function ejecutarRespaldo(todo) {
               + `&turno=${encodeURIComponent(_respaldo.turno)}`
               + `&todo=${todo}`;
 
+    // Cerrar modal
     bootstrap.Modal.getInstance(document.getElementById('modalRespaldo'))?.hide();
+    
+    // Limpiar intervalo si existe
+    if (intervaloProgreso) {
+        clearInterval(intervaloProgreso);
+        intervaloProgreso = null;
+    }
+    
+    // Redirigir
     window.location.href = url;
 }
+
+// Limpiar intervalo cuando se cierra el modal manualmente
+document.addEventListener('DOMContentLoaded', function() {
+    const modalElement = document.getElementById('modalRespaldo');
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (intervaloProgreso) {
+            clearInterval(intervaloProgreso);
+            intervaloProgreso = null;
+        }
+    });
+});
 </script>
+
+<!-- Cargar Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>
 </html>
