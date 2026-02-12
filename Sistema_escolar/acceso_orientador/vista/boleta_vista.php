@@ -1,21 +1,15 @@
-<?php
-echo "<div style='background: yellow; padding: 20px; margin: 20px; border: 3px solid red;'>";
-echo "<h1>✅ ARCHIVO CARGADO CORRECTAMENTE</h1>";
-echo "<p>Grado: " . ($grado ?? 'NO DEFINIDO') . "</p>";
-echo "<p>Si ves esto, el archivo se está cargando.</p>";
-echo "</div>";
-?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <title>Boleta Moderna</title>
-<!--boleta_vista.php - CON BOTÓN RESPALDO GRUPAL-->
+    <!-- boleta_vista.php — CON MODAL DE RESPALDO GRUPAL -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;600&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'League Spartan', sans-serif; background: #f8f9fa; padding: 20px; }
         .container { max-width: 1200px; }
+
         .header-title {
             text-align: center;
             margin-bottom: 30px;
@@ -24,7 +18,7 @@ echo "</div>";
             font-weight: bold;
             margin-top: 3em;
         }
-        
+
         /* CONTENEDOR DE INFO + BOTÓN RESPALDO GRUPAL */
         .info-header-wrapper {
             display: flex;
@@ -36,13 +30,12 @@ echo "</div>";
             border-radius: 12px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
         }
-        
         .info-text {
             flex: 1;
             line-height: 1.6;
         }
-        
-        /* Botón de respaldo grupal - verde */
+
+        /* Botón de respaldo grupal — verde, ahora dispara modal */
         .btn-backup-group {
             background: linear-gradient(135deg, #28a745, #20c997);
             border: none;
@@ -56,6 +49,7 @@ echo "</div>";
             box-shadow: 0 3px 10px rgba(40, 167, 69, 0.3);
             white-space: nowrap;
             transition: all 0.3s;
+            cursor: pointer;
         }
         .btn-backup-group:hover {
             background: linear-gradient(135deg, #218838, #1ba87a);
@@ -63,7 +57,7 @@ echo "</div>";
             box-shadow: 0 5px 15px rgba(40, 167, 69, 0.5);
             transform: translateY(-2px);
         }
-        
+
         .btn-download-all {
             display: block;
             width: 100%;
@@ -76,8 +70,9 @@ echo "</div>";
             padding: 12px 20px;
             border-radius: 50px;
         }
+
         .student-card {
-            background: white;
+            background: linear-gradient(to right, #0f6fff, #14f1f8);
             border-radius: 15px;
             padding: 20px;
             margin-bottom: 20px;
@@ -96,16 +91,16 @@ echo "</div>";
             color: #ffffff;
         }
         .download-btn {
-            background:white;
+            background: white;
             border: none;
             text-decoration: none;
             color: black;
             font-weight: bold;
             padding: 5px 15px;
-            border-radius: 10px 10px;
+            border-radius: 10px;
             margin-top: auto;
         }
-        /* Botón de respaldo manual - estilo discreto */
+        /* Botón de respaldo individual — discreto sobre fondo degradado */
         .backup-btn {
             background: rgba(255, 255, 255, 0.3);
             border: 1px solid rgba(255, 255, 255, 0.6);
@@ -122,11 +117,8 @@ echo "</div>";
             background: rgba(255, 255, 255, 0.5);
             color: white;
         }
-        .student-card{
-            background: linear-gradient(to right, #0f6fff, #14f1f8);
-        }
-        
-        /* Mensaje de éxito */
+
+        /* Mensaje de éxito/resultado de respaldo */
         .alert-success-custom {
             background: linear-gradient(135deg, #d4edda, #c3e6cb);
             border: 2px solid #28a745;
@@ -141,59 +133,79 @@ echo "</div>";
 </head>
 <body>
 <div class="container">
+
     <?php
-    // Mostrar mensaje de éxito si existe
-    if (isset($_GET['mensaje'])) {
-        $mensaje = htmlspecialchars($_GET['mensaje']);
+    // ── Mensaje de resultado del respaldo grupal ──
+    if (isset($_GET['total'])) {
+        $t  = (int)$_GET['total'];
+        $fi = (int)($_GET['finales']   ?? 0);
+        $pa = (int)($_GET['parciales'] ?? 0);
+        $mo = htmlspecialchars($_GET['modo'] ?? 'completo');
+        $modoTexto = ($mo === 'solo_listos') ? 'Solo boletas completas' : 'Todo el grupo';
         echo "<div class='alert alert-success-custom' role='alert'>";
-        echo "✅ " . $mensaje;
+        echo "✅ Respaldo completado (<strong>{$modoTexto}</strong>): "
+           . "<strong>{$t}</strong> PDF(s) guardados "
+           . "— {$fi} finales, {$pa} parciales.";
         echo "</div>";
+    } elseif (isset($_GET['mensaje'])) {
+        $mensaje = htmlspecialchars($_GET['mensaje']);
+        echo "<div class='alert alert-success-custom' role='alert'>✅ {$mensaje}</div>";
     }
     ?>
-    
+
     <div class="header-title">Boleta de Calificaciones</div>
-    
-    <!-- INFO ESCOLAR + BOTÓN RESPALDO GRUPAL -->
+
+    <!-- ── INFO ESCOLAR + BOTÓN RESPALDO (ahora abre el modal) ── -->
     <div class="info-header-wrapper">
         <div class="info-text">
             <strong>Escuela:</strong> <?= htmlspecialchars($nombre_escuela) ?><br>
-            <strong>Grado:</strong> <?= htmlspecialchars($grado) ?> | 
-            <strong>Grupo:</strong> <?= htmlspecialchars($grupo_romano) ?> | 
-            <strong>Turno:</strong> <?= htmlspecialchars($turno) ?> | 
+            <strong>Grado:</strong> <?= htmlspecialchars($grado) ?> |
+            <strong>Grupo:</strong> <?= htmlspecialchars($grupo_romano) ?> |
+            <strong>Turno:</strong> <?= htmlspecialchars($turno) ?> |
             <strong>Total de alumnos:</strong> <?= htmlspecialchars($total_alumnos) ?>
         </div>
         <div>
-            <a href="generar_respaldo_grupal.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>" 
-               class="btn-backup-group"
-               onclick="return confirm('¿Generar respaldo del grupo completo?\n\n✓ Se generará un PDF por cada alumno del grupo.\n✓ Los parciales sin calificar aparecerán como -- en la boleta.\n\n¿Desea continuar?');">
+            <!-- onclick llama a la función JS que abre el modal y dispara el AJAX -->
+            <button
+                class="btn-backup-group"
+                onclick="abrirModalRespaldo(
+                    '<?= htmlspecialchars($grado,  ENT_QUOTES) ?>',
+                    '<?= htmlspecialchars($grupo,  ENT_QUOTES) ?>',
+                    '<?= htmlspecialchars($turno,  ENT_QUOTES) ?>'
+                )">
                 💾 Generar Respaldo General
-            </a>
+            </button>
         </div>
     </div>
 
-    <!-- Tarjetas por alumno -->
+    <!-- ── TARJETAS POR ALUMNO ── -->
     <?php foreach ($alumnos as $alum): ?>
         <?php
         $nombre_completo = htmlspecialchars($alum['nombre_credencial'] . ' ' . $alum['apellidos_decrypted']);
-        $foto = !empty($alum['ruta_foto']) ? htmlspecialchars($alum['ruta_foto']) : 'https://tse3.mm.bing.net/th/id/OIP.2L4bAjBAkwILmakMvHA8AgHaFY?rs=1&pid=ImgDetMain&o=7&rm=3';
+        $foto = !empty($alum['ruta_foto'])
+            ? htmlspecialchars($alum['ruta_foto'])
+            : 'https://tse3.mm.bing.net/th/id/OIP.2L4bAjBAkwILmakMvHA8AgHaFY?rs=1&pid=ImgDetMain&o=7&rm=3';
         ?>
         <div class="student-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <div style="display: flex; align-items: center; gap: 15px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <div style="display:flex; align-items:center; gap:15px;">
                     <img src="<?= $foto ?>" alt="Foto" class="student-avatar">
                     <div>
                         <div class="student-name"><?= $nombre_completo ?></div>
-                        <div style="font-size: 0.9rem; color: #f9f9f9;">Estudiante / <?= htmlspecialchars($grado) ?> <?= htmlspecialchars($grupo_romano)?> <?= htmlspecialchars(" / Turno:".$turno) ?></div>
+                        <div style="font-size:0.9rem; color:#f9f9f9;">
+                            Estudiante / <?= htmlspecialchars($grado) ?>
+                            <?= htmlspecialchars($grupo_romano) ?>
+                            <?= htmlspecialchars(' / Turno: ' . $turno) ?>
+                        </div>
                     </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <!-- Botón principal: Imprimir PDF (siempre visible) -->
-                    <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>" target="_blank" class="download-btn">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>"
+                       target="_blank" class="download-btn">
                         📄 Imprimir PDF
                     </a>
-                    <!-- Botón de respaldo: siempre visible para todos los alumnos -->
-                    <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>&forzar_respaldo=1" 
-                       target="_blank" 
+                    <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>&forzar_respaldo=1"
+                       target="_blank"
                        class="backup-btn"
                        onclick="return confirm('¿Generar respaldo?\n\nSe guardará como Boleta_Final_<?= $alum['id_credencial'] ?>.pdf');">
                         💾 Respaldar
@@ -202,27 +214,261 @@ echo "</div>";
             </div>
         </div>
     <?php endforeach; ?>
-</div>
 
-<!-- Botón ZIP -->
-<a href="generar_zip_boletas.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>" 
+</div><!-- /.container -->
+
+<!-- ── BOTÓN ZIP ── -->
+<a href="generar_zip_boletas.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
    class="btn btn-download-all">
     Descargar Todas las Boletas en ZIP (<?= count($alumnos) ?> estudiantes)
 </a>
 
-<!-- Nota informativa discreta -->
+<!-- ── NOTA INFORMATIVA ── -->
 <div class="container mt-3 mb-4">
-    <div class="alert alert-info" style="font-size: 0.9rem;">
+    <div class="alert alert-info" style="font-size:0.9rem;">
         <strong>ℹ️ Información sobre Respaldos:</strong>
-        <ul class="mb-0" style="font-size: 0.85rem;">
-            <li><strong>Respaldo General del Grupo:</strong> Genera un PDF por <strong>cada alumno del grupo</strong>, independientemente de si tiene todos los parciales capturados. Los parciales faltantes aparecerán como <code>--</code> en la boleta.</li>
-            <li><strong>Botón "Respaldar" Individual:</strong> Guarda la boleta del alumno en el servidor como <code>Boleta_Final_[ID].pdf</code></li>
-            <li><strong>Ubicación:</strong> <code>respaldos/boletas/<?= $id_escuela ?>/grupos/[Grado] [Grupo]/</code></li>
+        <ul class="mb-0" style="font-size:0.85rem;">
+            <li>
+                <strong>Respaldo General del Grupo:</strong>
+                Al hacer clic en "Generar Respaldo General" se analizará el grupo y podrás elegir
+                respaldar <em>solo las boletas completas</em> o <em>todo el grupo</em>.
+                Los parciales faltantes aparecerán como <code>--</code>.
+            </li>
+            <li>
+                <strong>Botón "💾 Respaldar" individual:</strong>
+                Guarda la boleta del alumno en el servidor como <code>Boleta_Final_[ID].pdf</code>.
+            </li>
+            <li>
+                <strong>Ubicación:</strong>
+                <code>respaldos/boletas/<?= $id_escuela ?>/grupos/[Grado] [Grupo]/</code>
+            </li>
         </ul>
     </div>
 </div>
 
 <?php include 'footer_orientador.php'; ?>
+
+
+<!-- ================================================================
+     MODAL DE RESPALDO GRUPAL (Bootstrap 5)
+     ================================================================ -->
+<div class="modal fade" id="modalRespaldo" tabindex="-1"
+     aria-labelledby="modalRespaldoLabel" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:16px; overflow:hidden;">
+
+            <!-- Cabecera -->
+            <div class="modal-header"
+                 style="background:linear-gradient(135deg,#1a355e,#2b91ff); color:white; border:none;">
+                <h5 class="modal-title fw-bold" id="modalRespaldoLabel">
+                    💾 Generar Respaldo del Grupo
+                </h5>
+                <button type="button" class="btn-close btn-close-white"
+                        data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+
+            <!-- Cuerpo -->
+            <div class="modal-body p-4">
+
+                <!-- Estado: cargando -->
+                <div id="respaldo-loading" class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted">Analizando el grupo...</p>
+                </div>
+
+                <!-- Estado: error -->
+                <div id="respaldo-error" class="alert alert-danger d-none" role="alert">
+                    <strong>⚠️ Error:</strong>
+                    <span id="respaldo-error-msg"></span>
+                </div>
+
+                <!-- Estado: resultados -->
+                <div id="respaldo-resultados" class="d-none">
+
+                    <!-- Tarjetas de conteo -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-4 text-center">
+                            <div class="p-3 rounded-3"
+                                 style="background:#f0f4ff; border:1px solid #c8d8ff;">
+                                <div class="fs-2 fw-bold text-primary" id="cnt-total">—</div>
+                                <div class="small text-muted">Total de alumnos</div>
+                            </div>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="p-3 rounded-3"
+                                 style="background:#f0fff4; border:1px solid #a8e6c0;">
+                                <div class="fs-2 fw-bold text-success" id="cnt-listos">—</div>
+                                <div class="small text-muted">Boletas completas</div>
+                            </div>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="p-3 rounded-3"
+                                 style="background:#fff8f0; border:1px solid #ffd8a8;">
+                                <div class="fs-2 fw-bold text-warning" id="cnt-pendientes">—</div>
+                                <div class="small text-muted">Con pendientes</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Nota contextual dinámica -->
+                    <div id="respaldo-nota" class="alert mb-0" role="alert"></div>
+
+                </div>
+            </div><!-- /.modal-body -->
+
+            <!-- Pie con botones de acción -->
+            <div id="respaldo-acciones"
+                 class="modal-footer d-none justify-content-between"
+                 style="border-top:1px solid #dee2e6; padding:16px 24px;">
+
+                <button type="button" class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">
+                    Cancelar
+                </button>
+
+                <div class="d-flex gap-2">
+                    <!-- Solo alumnos con boleta completa (todo=0) -->
+                    <button type="button" id="btn-solo-listos"
+                            class="btn btn-outline-success fw-semibold"
+                            onclick="ejecutarRespaldo(0)">
+                        ✅ Solo boletas completas
+                    </button>
+
+                    <!-- Todos los alumnos (todo=1) -->
+                    <button type="button" id="btn-todos"
+                            class="btn fw-bold text-white"
+                            style="background:linear-gradient(135deg,#28a745,#20c997);"
+                            onclick="ejecutarRespaldo(1)">
+                        💾 Respaldar todo el grupo
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div><!-- /#modalRespaldo -->
+
+
+<!-- ================================================================
+     JAVASCRIPT DEL MODAL
+     ================================================================ -->
+<script>
+// Almacena los parámetros del grupo activo mientras el modal está abierto
+const _respaldo = { grado: '', grupo: '', turno: '' };
+
+/**
+ * Abre el modal y lanza la verificación AJAX.
+ * Se llama desde el botón "Generar Respaldo General".
+ */
+function abrirModalRespaldo(grado, grupo, turno) {
+    _respaldo.grado = grado;
+    _respaldo.grupo = grupo;
+    _respaldo.turno = turno;
+
+    // Resetear estado visual antes de abrir
+    document.getElementById('respaldo-loading').classList.remove('d-none');
+    document.getElementById('respaldo-error').classList.add('d-none');
+    document.getElementById('respaldo-resultados').classList.add('d-none');
+    document.getElementById('respaldo-acciones').classList.add('d-none');
+    // Restaurar btn-solo-listos por si quedó oculto de una apertura anterior
+    document.getElementById('btn-solo-listos').classList.remove('d-none');
+    document.getElementById('btn-todos').classList.remove('d-none');
+
+    // Abrir modal Bootstrap 5
+    new bootstrap.Modal(document.getElementById('modalRespaldo')).show();
+
+    // Disparar la consulta AJAX
+    verificarGrupo(grado, grupo, turno);
+}
+
+/**
+ * Llama a verificar_estado_grupo.php y recibe el JSON con los conteos.
+ */
+function verificarGrupo(grado, grupo, turno) {
+    const url = `verificar_estado_grupo.php`
+              + `?grado=${encodeURIComponent(grado)}`
+              + `&grupo=${encodeURIComponent(grupo)}`
+              + `&turno=${encodeURIComponent(turno)}`;
+
+    fetch(url, { credentials: 'same-origin' })
+        .then(res => {
+            if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
+            return res.json();
+        })
+        .then(data => {
+            if (data.error) throw new Error(data.error);
+            renderizarResultados(data);
+        })
+        .catch(err => {
+            document.getElementById('respaldo-loading').classList.add('d-none');
+            document.getElementById('respaldo-error-msg').textContent = err.message;
+            document.getElementById('respaldo-error').classList.remove('d-none');
+        });
+}
+
+/**
+ * Rellena el modal con los datos recibidos y ajusta los botones según el escenario.
+ */
+function renderizarResultados(data) {
+    document.getElementById('respaldo-loading').classList.add('d-none');
+
+    document.getElementById('cnt-total').textContent      = data.total;
+    document.getElementById('cnt-listos').textContent     = data.listos;
+    document.getElementById('cnt-pendientes').textContent = data.pendientes;
+
+    const notaEl        = document.getElementById('respaldo-nota');
+    const btnSoloListos = document.getElementById('btn-solo-listos');
+    const btnTodos      = document.getElementById('btn-todos');
+
+    if (data.total === 0) {
+        // Sin alumnos — no hay nada que respaldar
+        notaEl.className = 'alert alert-warning mb-0';
+        notaEl.innerHTML = '⚠️ No se encontraron alumnos en este grupo.';
+        btnSoloListos.classList.add('d-none');
+        btnTodos.classList.add('d-none');
+
+    } else if (data.pendientes === 0) {
+        // Todos completos — no tiene sentido el botón "solo listos"
+        notaEl.className = 'alert alert-success mb-0';
+        notaEl.innerHTML = `✅ <strong>¡Grupo listo!</strong> Los ${data.total} alumnos tienen sus 3 parciales capturados.`;
+        btnSoloListos.classList.add('d-none');
+
+    } else if (data.listos === 0) {
+        // Ninguno completo — solo tiene sentido respaldar todo
+        notaEl.className = 'alert alert-warning mb-0';
+        notaEl.innerHTML = `⚠️ <strong>Ningún alumno</strong> tiene los 3 parciales completos. `
+                         + `Se generarán boletas con calificaciones pendientes (<code>--</code>).`;
+        btnSoloListos.classList.add('d-none');
+
+    } else {
+        // Mezcla: hay listos y pendientes — mostrar ambas opciones
+        notaEl.className = 'alert alert-info mb-0';
+        notaEl.innerHTML = `ℹ️ Hay <strong>${data.listos} alumno(s) con boleta completa</strong> `
+                         + `y <strong>${data.pendientes} con calificaciones pendientes</strong>. `
+                         + `Elige cómo proceder:`;
+    }
+
+    document.getElementById('respaldo-resultados').classList.remove('d-none');
+    document.getElementById('respaldo-acciones').classList.remove('d-none');
+}
+
+/**
+ * Cierra el modal y redirige a generar_respaldo_grupal.php.
+ *   todo=0 → solo alumnos con boleta completa
+ *   todo=1 → todos los alumnos del grupo
+ */
+function ejecutarRespaldo(todo) {
+    const url = `generar_respaldo_grupal.php`
+              + `?grado=${encodeURIComponent(_respaldo.grado)}`
+              + `&grupo=${encodeURIComponent(_respaldo.grupo)}`
+              + `&turno=${encodeURIComponent(_respaldo.turno)}`
+              + `&todo=${todo}`;
+
+    bootstrap.Modal.getInstance(document.getElementById('modalRespaldo'))?.hide();
+    window.location.href = url;
+}
+</script>
 
 </body>
 </html>

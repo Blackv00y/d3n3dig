@@ -1,6 +1,6 @@
 <?php
-// generar_respaldo_grupal.php — Basado en generar_zip_boletas.php
-// Guarda PDFs individuales en el servidor en lugar de generar ZIP
+// generar_respaldo_grupal.php — CON VALIDACIÓN COMPLETA/INCOMPLETA
+// Genera PDFs individuales con nomenclatura diferenciada según estado
 session_start();
 if (!isset($_SESSION['id_credencial'])) exit;
 
@@ -8,7 +8,7 @@ include '../funciones/conexQRConejo.php';
 $secretKey = 'your-secret-key';
 
 // ============================================================
-// FUNCIONES AUXILIARES (IDÉNTICAS AL ZIP)
+// FUNCIONES AUXILIARES
 // ============================================================
 
 function decryptData($data, $key) {
@@ -71,12 +71,58 @@ function normalizarGrado($grado) {
 }
 
 // ============================================================
+// NUEVA FUNCIÓN: VERIFICAR SI BOLETA ESTÁ COMPLETA
+// ============================================================
+
+/**
+ * Verifica si todas las materias del alumno tienen los 3 parciales capturados
+ * 
+ * @param array $materias - Array de materias asignadas al alumno
+ * @param array $calificaciones - Array de calificaciones del alumno
+ * @return bool - true si TODAS las materias tienen 3 parciales numéricos
+ */
+function boletaEstaCompleta($materias, $calificaciones) {
+    $totalMaterias = count($materias);
+    $materiasCompletas = 0;
+    
+    foreach ($materias as $mat) {
+        $id_materia = (int)$mat['id_materia'];
+        
+        // Verificar si existe registro de calificación para esta materia
+        if (!isset($calificaciones[$id_materia])) {
+            continue; // Materia sin calificaciones = incompleta
+        }
+        
+        $cal = $calificaciones[$id_materia];
+        $p1 = $cal['primer_parcial'];
+        $p2 = $cal['segundo_parcial'];
+        $p3 = $cal['tercer_parcial'];
+        
+        // Criterio estricto: Los 3 parciales deben ser numéricos (no NULL)
+        // is_numeric() retorna true para valores numéricos, false para NULL
+        if (is_numeric($p1) && is_numeric($p2) && is_numeric($p3)) {
+            $materiasCompletas++;
+        }
+    }
+    
+    // Solo está completa si TODAS las materias tienen 3 parciales
+    $estaCompleta = ($materiasCompletas === $totalMaterias && $totalMaterias > 0);
+    
+    return $estaCompleta;
+}
+
+// ============================================================
 // PARÁMETROS Y VALIDACIÓN
 // ============================================================
 
 $grado = $_GET['grado'] ?? '';
 $grupo = $_GET['grupo'] ?? '';
 $turno = $_GET['turno'] ?? '';
+
+// todo=1 → respaldar TODOS los alumnos (completos e incompletos)
+// todo=0 → respaldar SOLO los alumnos con boleta completa (los 3 parciales capturados)
+// Defecto: 1 (respalda todo — comportamiento más seguro)
+$respaldarTodo = (isset($_GET['todo']) && (int)$_GET['todo'] === 0) ? false : true;
 
 if (!$grado || !$grupo || !$turno) die("Parámetros incompletos.");
 
@@ -103,7 +149,7 @@ if (!file_exists($rutaCompleta)) {
 }
 
 // ============================================================
-// OBTENER ALUMNOS DEL GRUPO (IDÉNTICO AL ZIP)
+// OBTENER ALUMNOS DEL GRUPO
 // ============================================================
 
 $alumnos = [];
@@ -126,7 +172,7 @@ while ($row = mysqli_fetch_assoc($result)) {
 if (empty($alumnos)) die("No hay alumnos en este grupo.");
 
 // ============================================================
-// CARGAR FPDF EXTENDIDO (IDÉNTICO AL ZIP)
+// CARGAR FPDF EXTENDIDO
 // ============================================================
 
 require_once 'fpdf/fpdf.php';
@@ -147,17 +193,24 @@ class BoletaPDF extends FPDF {
 }
 
 // ============================================================
-// BUCLE: PROCESAR CADA ALUMNO (DISEÑO IDÉNTICO AL ZIP)
+// CONTADORES Y REGISTRO DE ESTATUS
 // ============================================================
 
 $cantidad_generada = 0;
+$boletas_finales = 0;
+$boletas_parciales = 0;
+$estatus_grupo = []; // Registro de control
+
+// ============================================================
+// BUCLE: PROCESAR CADA ALUMNO CON VALIDACIÓN
+// ============================================================
 
 foreach ($alumnos as $alum) {
     $nombre_completo = $alum['nombre_credencial'] . ' ' . $alum['apellidos_decrypted'];
     $id_alumno = $alum['id_credencial'];
     $id_escuela_alum = $alum['id_escuela'];
 
-    // --- Obtener datos completos del alumno ---
+    // Obtener datos completos del alumno
     $stmt = mysqli_prepare($conexion, "
         SELECT 
             c.nombre_credencial, 
@@ -189,7 +242,7 @@ foreach ($alumnos as $alum) {
     $cct = $alum_data['cct_escuela'];
     $curp_des = decryptData($alum_data['curp_credencial'], $secretKey) ?: '—';
 
-    // ================= FOTO =================
+    // Foto
     $foto1 = !empty($alum_data['ruta_foto'])  
         ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum_data['ruta_foto'], '/')  
         : '';
@@ -199,7 +252,7 @@ foreach ($alumnos as $alum) {
     $foto_default = __DIR__ . '/fpdf/R.png';
     $foto = file_exists($foto1) ? $foto1 : (file_exists($foto2) ? $foto2 : $foto_default);
 
-    // --- Materias ---
+    // Materias
     $materias = [];
     $stmt = mysqli_prepare($conexion, "
         SELECT m.id_materia, m.nombre_materia
@@ -213,7 +266,7 @@ foreach ($alumnos as $alum) {
     $result = mysqli_stmt_get_result($stmt);
     while ($row = mysqli_fetch_assoc($result)) $materias[] = $row;
 
-    // --- Calificaciones ---
+    // Calificaciones
     $calificaciones = [];
     $stmt = mysqli_prepare($conexion, "SELECT id_materia, primer_parcial, segundo_parcial, tercer_parcial FROM calificaciones WHERE id_alumno = ?");
     mysqli_stmt_bind_param($stmt, "i", $id_alumno);
@@ -224,14 +277,45 @@ foreach ($alumnos as $alum) {
     }
 
     // ============================================================
-    // GENERAR PDF (DISEÑO 100% IDÉNTICO AL ZIP)
+    // VALIDACIÓN: ¿BOLETA COMPLETA O PARCIAL?
+    // ============================================================
+    
+    $boletaCompleta = boletaEstaCompleta($materias, $calificaciones);
+    $tipoBolet = $boletaCompleta ? 'FINAL' : 'PARCIAL';
+    
+    // ── FILTRO: si todo=0 y la boleta está incompleta, saltar este alumno ──
+    if (!$respaldarTodo && !$boletaCompleta) {
+        $boletas_parciales++;
+        $estatus_grupo[] = ['nombre' => $nombre_completo, 'id' => $id_alumno, 'tipo' => 'OMITIDA'];
+        error_log("INFO: Alumno $id_alumno ($nombre_completo) - OMITIDO (boleta incompleta, todo=0)");
+        continue;
+    }
+    
+    // Registrar en el array de control
+    $estatus_grupo[] = [
+        'nombre' => $nombre_completo,
+        'id' => $id_alumno,
+        'tipo' => $tipoBolet
+    ];
+    
+    // Incrementar contador correspondiente
+    if ($boletaCompleta) {
+        $boletas_finales++;
+    } else {
+        $boletas_parciales++;
+    }
+    
+    error_log("INFO: Alumno $id_alumno ($nombre_completo) - Boleta $tipoBolet");
+
+    // ============================================================
+    // GENERAR PDF (DISEÑO IDÉNTICO)
     // ============================================================
     
     $pdf = new BoletaPDF('P', 'mm', 'Letter');
     $pdf->SetMargins(12, 12, 12);
     $pdf->AddPage();
 
-    // ================= ENCABEZADO OFICIAL =================
+    // ENCABEZADO OFICIAL
     $logo_sep = __DIR__ . '/img/logo_sep.png';
     $logo_edomx = __DIR__ . '/img/edomex.png';
     if (file_exists($logo_sep)) $pdf->Image($logo_sep, 12, 8, 50);
@@ -248,7 +332,7 @@ foreach ($alumnos as $alum) {
     $pdf->Cell(0, 5, utf8_decode('CICLO ESCOLAR 2025-2026'), 0, 1, 'C');
     $pdf->Ln(10);
 
-    // === DATOS DEL ALUMNO ===
+    // DATOS DEL ALUMNO
     $pdf->SetFont('Arial', 'B', 10);
     $pdf->SetFillColor(220, 220, 220);
     $pdf->Cell(0, 6, utf8_decode('DATOS DEL ALUMNO(A)'), 0, 1, 'C', true);
@@ -282,7 +366,7 @@ foreach ($alumnos as $alum) {
 
     $pdf->SetY($yActual + 38);
 
-    // === DATOS DE LA ESCUELA ===
+    // DATOS DE LA ESCUELA
     $pdf->SetFont('Arial', 'B', 10);
     $pdf->Cell(0, 6, utf8_decode('DATOS DE LA ESCUELA'), 0, 1, 'C', true);
     $pdf->Ln(2);
@@ -299,7 +383,7 @@ foreach ($alumnos as $alum) {
     $pdf->Cell(0, 6, $cct, 0, 1);
     $pdf->Ln(5);
 
-    // ================== TABLA DE CALIFICACIONES ==================
+    // TABLA DE CALIFICACIONES
     $yInicioTabla = $pdf->GetY();
     $an_m = 90; $an_p = 15; $an_pf = 30; $an_st = 25;
 
@@ -347,7 +431,7 @@ foreach ($alumnos as $alum) {
     $pdf->Cell($an_pf, 8, $prom_gr, 1, 0, 'C', true);
     $pdf->Cell($an_st, 8, '', 'LRB', 1);
 
-    // DIBUJAR BLOQUE STATUS (Círculos)
+    // CÍRCULOS DE RENDIMIENTO
     $yFinTabla = $pdf->GetY();
     $altoContenidoStatus = $yFinTabla - ($yInicioTabla + 7);
     $altoCeldaSt = $altoContenidoStatus / 3;
@@ -374,7 +458,7 @@ foreach ($alumnos as $alum) {
         if ($key != 'M') $pdf->Line($xSt, $cfg['y']+$altoCeldaSt, $xSt+$an_st, $cfg['y']+$altoCeldaSt);
     }
 
-    // === EXPLICACIÓN DE STATUS ===
+    // LEYENDA DE RENDIMIENTO
     $pdf->Ln(15);
     $pdf->SetFillColor(220, 220, 220);
     $pdf->SetFont('Arial', 'B', 10);
@@ -400,11 +484,10 @@ foreach ($alumnos as $alum) {
     }
     $pdf->SetTextColor(0);
 
-    // === BLOQUE FIRMAS (VERTICAL) Y SUGERENCIAS ===
+    // FIRMAS Y SUGERENCIAS
     $pdf->Ln(12);
     $yF = $pdf->GetY();
 
-    // --- Firmas (Lado Izquierdo) ---
     $pdf->SetFont('Arial', 'B', 10);
     $pdf->SetFillColor(220, 220, 220);
     $pdf->Cell(90, 6, 'FIRMA DEL TUTOR(A)', 1, 1, 'C', true);
@@ -416,7 +499,6 @@ foreach ($alumnos as $alum) {
         $pdf->Cell(65, 13, '', 1, 1);
     }
 
-    // --- Sugerencias (Lado Derecho) ---
     $pdf->SetXY(110, $yF);
     $pdf->SetFont('Arial', 'B', 10);
     $pdf->Cell(92, 6, 'SUGERENCIAS / OBSERVACIONES', 1, 1, 'C', true);
@@ -428,17 +510,24 @@ foreach ($alumnos as $alum) {
     }
 
     // ============================================================
-    // GUARDAR PDF EN SERVIDOR (EN LUGAR DE AGREGAR AL ZIP)
+    // GUARDAR PDF CON NOMENCLATURA DIFERENCIADA
     // ============================================================
     
     $fecha = date('Y-m-d_H-i-s');
-    $nombreArchivo = "Boleta_Final_{$id_alumno}_{$fecha}.pdf";
+    
+    // Nomenclatura según estado: Boleta_Final_ o Boleta_Parcial_
+    if ($boletaCompleta) {
+        $nombreArchivo = "Boleta_Final_{$id_alumno}_{$fecha}.pdf";
+    } else {
+        $nombreArchivo = "Boleta_Parcial_{$id_alumno}_{$fecha}.pdf";
+    }
+    
     $rutaArchivo = $rutaCompleta . $nombreArchivo;
     
     try {
         $pdf->Output('F', $rutaArchivo);
         $cantidad_generada++;
-        error_log("INFO: PDF guardado - $nombreArchivo");
+        error_log("INFO: ✓ PDF guardado - $nombreArchivo");
     } catch (Exception $e) {
         error_log("ERROR: Fallo al guardar PDF de alumno $id_alumno - " . $e->getMessage());
     }
@@ -447,9 +536,28 @@ foreach ($alumnos as $alum) {
 mysqli_close($conexion);
 
 // ============================================================
-// REDIRECCIÓN CON MENSAJE DE ÉXITO
+// REGISTRO DE CONTROL (OPCIONAL - PARA LOG)
 // ============================================================
 
-header("Location: boleta_alumnos_nueva.php?grado=" . urlencode($grado) . "&grupo=" . urlencode($grupo) . "&turno=" . urlencode($turno) . "&exito=" . urlencode($cantidad_generada));
+error_log("INFO: ========================================");
+error_log("INFO: RESUMEN DEL RESPALDO GRUPAL");
+error_log("INFO: Total generados: $cantidad_generada");
+error_log("INFO: Boletas FINALES: $boletas_finales");
+error_log("INFO: Boletas PARCIALES: $boletas_parciales");
+error_log("INFO: ========================================");
+
+// ============================================================
+// REDIRECCIÓN CON CONTADORES DETALLADOS
+// ============================================================
+
+$modoTexto = $respaldarTodo ? 'completo' : 'solo_listos';
+
+header("Location: boleta_alumnos_nueva.php?grado=" . urlencode($grado) . 
+       "&grupo=" . urlencode($grupo) . 
+       "&turno=" . urlencode($turno) . 
+       "&total=" . urlencode($cantidad_generada) .
+       "&finales=" . urlencode($boletas_finales) .
+       "&parciales=" . urlencode($boletas_parciales) .
+       "&modo=" . urlencode($modoTexto));
 exit();
 ?>
