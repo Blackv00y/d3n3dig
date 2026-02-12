@@ -1,3 +1,10 @@
+<?php
+echo "<div style='background: yellow; padding: 20px; margin: 20px; border: 3px solid red;'>";
+echo "<h1>✅ ARCHIVO CARGADO CORRECTAMENTE</h1>";
+echo "<p>Grado: " . ($grado ?? 'NO DEFINIDO') . "</p>";
+echo "<p>Si ves esto, el archivo se está cargando.</p>";
+echo "</div>";
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -115,16 +122,6 @@
             background: rgba(255, 255, 255, 0.5);
             color: white;
         }
-        /* Badge para boleta completa */
-        .badge-complete {
-            background: rgba(40, 167, 69, 0.9);
-            color: white;
-            padding: 5px 12px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            margin-left: 8px;
-            font-weight: 600;
-        }
         .student-card{
             background: linear-gradient(to right, #0f6fff, #14f1f8);
         }
@@ -168,7 +165,7 @@
         <div>
             <a href="generar_respaldo_grupal.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>" 
                class="btn-backup-group"
-               onclick="return confirm('¿Generar respaldo automático de todas las boletas completas del grupo?\n\n✓ Solo se generarán PDFs de alumnos con todos sus parciales capturados.\n✓ Los alumnos con boletas incompletas serán omitidos.\n\n¿Desea continuar?');">
+               onclick="return confirm('¿Generar respaldo del grupo completo?\n\n✓ Se generará un PDF por cada alumno del grupo.\n✓ Los parciales sin calificar aparecerán como -- en la boleta.\n\n¿Desea continuar?');">
                 💾 Generar Respaldo General
             </a>
         </div>
@@ -179,7 +176,6 @@
         <?php
         $nombre_completo = htmlspecialchars($alum['nombre_credencial'] . ' ' . $alum['apellidos_decrypted']);
         $foto = !empty($alum['ruta_foto']) ? htmlspecialchars($alum['ruta_foto']) : 'https://tse3.mm.bing.net/th/id/OIP.2L4bAjBAkwILmakMvHA8AgHaFY?rs=1&pid=ImgDetMain&o=7&rm=3';
-        $boleta_completa = $alum['boleta_completa'] ?? false;
         ?>
         <div class="student-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -195,19 +191,13 @@
                     <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>" target="_blank" class="download-btn">
                         📄 Imprimir PDF
                     </a>
-                    
-                    <?php if ($boleta_completa): ?>
-                        <!-- Si está completa: mostrar badge verde -->
-                        <span class="badge-complete">✓ Respaldada</span>
-                    <?php else: ?>
-                        <!-- Si NO está completa: mostrar botón de respaldo manual -->
-                        <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>&forzar_respaldo=1" 
-                           target="_blank" 
-                           class="backup-btn"
-                           onclick="return confirm('¿Generar respaldo manual?\n\nSe guardará como Boleta_Manual_<?= $alum['id_credencial'] ?>.pdf');">
-                            💾 Respaldar
-                        </a>
-                    <?php endif; ?>
+                    <!-- Botón de respaldo: siempre visible para todos los alumnos -->
+                    <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>&forzar_respaldo=1" 
+                       target="_blank" 
+                       class="backup-btn"
+                       onclick="return confirm('¿Generar respaldo?\n\nSe guardará como Boleta_Final_<?= $alum['id_credencial'] ?>.pdf');">
+                        💾 Respaldar
+                    </a>
                 </div>
             </div>
         </div>
@@ -225,9 +215,8 @@
     <div class="alert alert-info" style="font-size: 0.9rem;">
         <strong>ℹ️ Información sobre Respaldos:</strong>
         <ul class="mb-0" style="font-size: 0.85rem;">
-            <li><strong>Respaldo General del Grupo:</strong> Genera PDFs automáticamente de <strong>todos los alumnos con boletas completas</strong> (todos los parciales capturados). Los alumnos con parciales faltantes son omitidos.</li>
-            <li><strong>Respaldo Automático Individual:</strong> Las boletas con todas las calificaciones capturadas se guardan automáticamente como <code>Boleta_Final_[ID].pdf</code></li>
-            <li><strong>Botón "Respaldar" Individual:</strong> Permite guardar manualmente boletas incompletas como <code>Boleta_Manual_[ID].pdf</code></li>
+            <li><strong>Respaldo General del Grupo:</strong> Genera un PDF por <strong>cada alumno del grupo</strong>, independientemente de si tiene todos los parciales capturados. Los parciales faltantes aparecerán como <code>--</code> en la boleta.</li>
+            <li><strong>Botón "Respaldar" Individual:</strong> Guarda la boleta del alumno en el servidor como <code>Boleta_Final_[ID].pdf</code></li>
             <li><strong>Ubicación:</strong> <code>respaldos/boletas/<?= $id_escuela ?>/grupos/[Grado] [Grupo]/</code></li>
         </ul>
     </div>
