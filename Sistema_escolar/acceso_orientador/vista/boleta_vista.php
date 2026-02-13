@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Boleta Moderna</title>
-    <!-- boleta_vista.php — CON MODAL DE RESPALDO GRUPAL Y BARRA DE PROGRESO -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css  " rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=League+Spartan  :wght@400;600&display=swap" rel="stylesheet">
+    
     <style>
         body { font-family: 'League Spartan', sans-serif; background: #f8f9fa; padding: 20px; }
         .container { max-width: 1200px; }
@@ -647,8 +645,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
-<!-- Cargar Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js  "></script>
 
 </body>
 </html>
