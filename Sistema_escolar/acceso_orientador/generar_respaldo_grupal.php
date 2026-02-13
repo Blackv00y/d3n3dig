@@ -547,11 +547,24 @@ error_log("INFO: Boletas PARCIALES: $boletas_parciales");
 error_log("INFO: ========================================");
 
 // ============================================================
-// REDIRECCIÓN CON CONTADORES DETALLADOS
+// RESPUESTA: JSON (AJAX) O REDIRECCIÓN (NORMAL)
 // ============================================================
 
 $modoTexto = $respaldarTodo ? 'completo' : 'solo_listos';
 
+// ── Si es llamada AJAX, devolver JSON en lugar de redirigir ──
+if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
+    header('Content-Type: application/json');
+    echo json_encode([
+        'total' => $cantidad_generada,
+        'finales' => $boletas_finales,
+        'parciales' => $boletas_parciales,
+        'modo' => $modoTexto
+    ]);
+    exit();
+}
+
+// ── Si NO es AJAX, redirigir normalmente ──
 header("Location: boleta_alumnos_nueva.php?grado=" . urlencode($grado) . 
        "&grupo=" . urlencode($grupo) . 
        "&turno=" . urlencode($turno) . 
