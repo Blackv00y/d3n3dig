@@ -192,6 +192,12 @@
             <strong>Total de alumnos:</strong> <?= htmlspecialchars($total_alumnos) ?>
         </div>
         <div>
+        <!-- boton para el historial-->
+            <a href="historial_respaldos.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
+            class="btn-backup-group"
+            style="background: linear-gradient(135deg, #105881, #34c0e6); margin-left: 10px;">
+             📋 Ver Historial de Respaldos
+             </a>
             <!-- onclick llama a la función JS que abre el modal y dispara el AJAX -->
             <button
                 class="btn-backup-group"
