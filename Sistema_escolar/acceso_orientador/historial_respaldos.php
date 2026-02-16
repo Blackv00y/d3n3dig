@@ -587,7 +587,7 @@ $mbTotales = $totalArchivos > 0 ? round(array_sum(array_column($archivosFiltrado
     </div>
 
 </div><!-- /.container -->
-
+<br>
 <?php include 'footer_orientador.php'; ?>
 
 <!-- SCRIPT DE FILTROS -->
