@@ -370,21 +370,21 @@
             
             <!-- Pie con botones de acción -->
         <div id="respaldo-acciones" class="modal-footer d-none" style="padding: 16px 24px; border-top: 1px solid #dee2e6;">
-            <!-- Botón "Todo el grupo" (gris, deshabilitado) -->
-            <button type="button" 
-                    id="btn-todos" 
+            <!-- Botón "Todo el grupo" -->
+            <button type="button"
+                    id="btn-todos"
                     class="btn btn-secondary w-100 mb-2"
-                    onclick="ejecutarRespaldo(1)">Todo el grupo</button>
+                    onclick="pedirConfirmacion(1)">💾 Todo el grupo</button>
 
-            <!-- Botones de acción (azul a la izquierda, rojo a la derecha) -->
+            <!-- Botones de acción -->
             <div class="d-flex gap-2 w-100">
-                <button type="button" id="btn-solo-listos" 
+                <button type="button" id="btn-solo-listos"
                         class="btn btn-outline-success fw-semibold"
-                        onclick="ejecutarRespaldo(0)">
-                    Solo boletas completas
+                        onclick="pedirConfirmacion(0)">
+                    ✅ Solo boletas completas
                 </button>
-                <button type="button" 
-                class="btn btn-danger w-50 fw-bold py-2"
+                <button type="button"
+                        class="btn btn-danger w-50 fw-bold py-2"
                         data-bs-dismiss="modal">
                     Cancelar
                 </button>
@@ -394,6 +394,59 @@
         </div>
     </div>
 </div><!-- /#modalRespaldo -->
+
+<!-- ================================================================
+     MODAL DE CONFIRMACIÓN
+     Se abre desde pedirConfirmacion(todo) antes de ejecutarRespaldo(todo)
+     ================================================================ -->
+<div class="modal fade" id="modalConfirmacion" tabindex="-1"
+     aria-labelledby="modalConfirmacionLabel" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content" style="border-radius:16px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+
+            <!-- Cabecera con degradado igual a las tarjetas de alumno -->
+            <div class="modal-header border-0 pb-0"
+                 style="background:linear-gradient(135deg, #0f6fff, #14f1f8); padding:20px 20px 0;">
+                <div class="w-100 text-center pb-3">
+                    <div id="conf-icono"
+                         style="width:56px; height:56px; border-radius:50%; background:rgba(255,255,255,0.25);
+                                display:flex; align-items:center; justify-content:center;
+                                margin:0 auto 10px; font-size:1.6rem; backdrop-filter:blur(4px);">
+                        💾
+                    </div>
+                    <h5 class="modal-title fw-bold text-white mb-0" id="modalConfirmacionLabel">
+                        Confirmar respaldo
+                    </h5>
+                </div>
+            </div>
+
+            <!-- Cuerpo -->
+            <div class="modal-body text-center px-4 pt-4 pb-3">
+                <p id="conf-pregunta" class="fw-semibold mb-1" style="color:#1a355e; font-size:0.95rem;"></p>
+                <p id="conf-detalle" class="text-muted small mb-0"></p>
+            </div>
+
+            <!-- Pie -->
+            <div class="modal-footer border-0 d-flex gap-2 px-4 pb-4 pt-1 justify-content-center">
+                <button type="button"
+                        id="conf-btn-cancelar"
+                        class="btn btn-outline-secondary px-4"
+                        style="border-radius:50px;">
+                    Cancelar
+                </button>
+                <button type="button"
+                        id="conf-btn-confirmar"
+                        class="btn fw-bold text-white px-4"
+                        style="background:linear-gradient(135deg,#28a745,#20c997); border:none; border-radius:50px;
+                               box-shadow:0 4px 12px rgba(40,167,69,0.35);">
+                    ✔ Confirmar
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div><!-- /#modalConfirmacion -->
 
 <!-- ================================================================
      JAVASCRIPT DEL MODAL CON BARRA DE PROGRESO
@@ -505,22 +558,55 @@ function renderizarResultados(data) {
 }
 
 /**
+ * Abre el modal de confirmación Bootstrap antes de ejecutar el respaldo.
+ * @param {number} todo  0 = solo listos · 1 = todo el grupo
+ */
+function pedirConfirmacion(todo) {
+    // Textos dinámicos según la opción elegida
+    const config = (todo === 0)
+        ? {
+            icono:    '✅',
+            pregunta: '¿Respaldar solo las boletas completas?',
+            detalle:  'Solo se generarán PDFs de los alumnos con los 3 parciales capturados.'
+          }
+        : {
+            icono:    '💾',
+            pregunta: '¿Respaldar todas las boletas del grupo?',
+            detalle:  'Se generará un PDF por cada alumno. Los parciales faltantes aparecerán como --.'
+          };
+
+    document.getElementById('conf-icono').textContent     = config.icono;
+    document.getElementById('conf-pregunta').textContent  = config.pregunta;
+    document.getElementById('conf-detalle').textContent   = config.detalle;
+
+    // Al confirmar: cerrar este modal y lanzar el respaldo real
+    const btnConfirmar = document.getElementById('conf-btn-confirmar');
+    // Clonar para limpiar listeners anteriores (evita acumulación si se abre varias veces)
+    const nuevoBtn = btnConfirmar.cloneNode(true);
+    btnConfirmar.parentNode.replaceChild(nuevoBtn, btnConfirmar);
+    nuevoBtn.addEventListener('click', () => {
+        bootstrap.Modal.getInstance(document.getElementById('modalConfirmacion'))?.hide();
+        ejecutarRespaldo(todo);
+    });
+
+    // Al cancelar: solo cerrar el modal de confirmación (el de respaldo queda abierto)
+    const btnCancelar = document.getElementById('conf-btn-cancelar');
+    const nuevoBtnC = btnCancelar.cloneNode(true);
+    btnCancelar.parentNode.replaceChild(nuevoBtnC, btnCancelar);
+    nuevoBtnC.addEventListener('click', () => {
+        bootstrap.Modal.getInstance(document.getElementById('modalConfirmacion'))?.hide();
+    });
+
+    new bootstrap.Modal(document.getElementById('modalConfirmacion')).show();
+}
+
+/**
  * Ejecuta el respaldo real.
- * AQUÍ es donde aparece la barra de progreso: el usuario ya eligió,
+ * AQUÍ es donde aparece la barra de progreso: el usuario ya confirmó,
  * el modal oculta los resultados y muestra la pantalla de progreso
  * mientras el fetch espera la respuesta del servidor.
  */
 function ejecutarRespaldo(todo) {
-    // ── CONFIRMACIÓN ANTES DE EJECUTAR ──
-    const opcion = (todo === 1) ? 'todo el grupo' : 'solo las boletas completas';
-    const mensaje = `¿Estás seguro de que quieres generar el respaldo de ${opcion}?\n\n` +
-                   `Se crearán los PDFs y se guardarán en el servidor.\n` +
-                   `Esta acción no se puede deshacer.`;
-    
-    if (!confirm(mensaje)) {
-        return; // El usuario canceló
-    }
-
     // ── 1. Ocultar resultados y acciones; mostrar pantalla de progreso ──
     document.getElementById('respaldo-resultados').classList.add('d-none');
     document.getElementById('respaldo-acciones').classList.add('d-none');
