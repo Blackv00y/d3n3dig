@@ -1,5 +1,6 @@
 <?php
 // descargar_pdf.php — Endpoint seguro para servir PDFs de respaldo
+// Actualizado para nueva arquitectura de carpetas
 session_start();
 if (!isset($_SESSION['id_credencial'])) {
     http_response_code(401);
@@ -22,11 +23,13 @@ if (!$id_escuela) {
 }
 
 // ── Parámetros ──
-$archivo = basename($_GET['archivo'] ?? '');  // nombre del PDF
-$carpeta = basename($_GET['carpeta'] ?? '');  // nombre de la carpeta (ej. "Primero I")
-$accion  = $_GET['accion'] ?? 'descargar';    // 'descargar' | 'visualizar'
+$archivo    = basename($_GET['archivo']    ?? '');  // nombre del PDF
+$carpeta    = basename($_GET['carpeta']    ?? '');  // ej. "Primero I"
+$generacion = basename($_GET['generacion'] ?? '');  // ej. "Generación 2025"
+$turno      = basename($_GET['turno']      ?? '');  // ej. "Matutino"
+$accion     = $_GET['accion'] ?? 'descargar';       // 'descargar' | 'visualizar'
 
-if (!$archivo || !$carpeta) {
+if (!$archivo || !$carpeta || !$generacion || !$turno) {
     http_response_code(400);
     die('Parámetros incompletos');
 }
@@ -38,10 +41,11 @@ if (strtolower(pathinfo($archivo, PATHINFO_EXTENSION)) !== 'pdf') {
 }
 
 // ── Construir y verificar ruta ──
-$rutaBase    = __DIR__ . '/respaldos/boletas/' . intval($id_escuela) . '/grupos/';
-$rutaArchivo = $rutaBase . $carpeta . '/' . $archivo;
+// Nueva estructura: respaldos/boletas/{ID}/{GENERACIÓN}/{TURNO}/grupos/{GRUPO}/
+$rutaBase    = __DIR__ . '/respaldos/boletas/' . intval($id_escuela) . '/';
+$rutaArchivo = $rutaBase . $generacion . '/' . $turno . '/grupos/' . $carpeta . '/' . $archivo;
 
-// realpath() resuelve .. y symlinks; comprobamos que el resultado
+// realpath() resuelve .. y symlinks; verificamos que el resultado
 // siga dentro de la carpeta de la escuela (previene path traversal)
 $rutaReal     = realpath($rutaArchivo);
 $rutaBaseFull = realpath($rutaBase);

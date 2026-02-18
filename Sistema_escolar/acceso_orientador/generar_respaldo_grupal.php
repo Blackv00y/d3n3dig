@@ -135,17 +135,36 @@ $id_escuela = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt))['id_escuela'];
 
 // ============================================================
 // CONSTRUIR RUTA DE RESPALDO
+// Nueva arquitectura: respaldos/boletas/[ID]/[GENERACIÓN]/[TURNO]/grupos/[GRADO GRUPO]/
 // ============================================================
+
+// Generación actual (año del ciclo escolar)
+$generacionActual = '2025';
+
+// Turno normalizado
+$turnoNormalizado = ucfirst(strtolower(trim($turno)));
 
 $rutaBase = __DIR__ . '/respaldos/boletas/';
 $gradoNormalizado = normalizarGrado($grado);
 $grupoRomano = convertirGrupoARomano($grupo);
 $nombreCarpetaGrupo = $gradoNormalizado . ' ' . $grupoRomano;
-$rutaCompleta = $rutaBase . $id_escuela . '/grupos/' . $nombreCarpetaGrupo . '/';
 
-// Crear carpeta si no existe
+// Nueva ruta jerárquica
+$rutaCompleta = $rutaBase 
+              . $id_escuela . '/'
+              . 'Generación ' . $generacionActual . '/'
+              . $turnoNormalizado . '/'
+              . 'grupos/'
+              . $nombreCarpetaGrupo . '/';
+
+error_log("INFO: Ruta de respaldo grupal: $rutaCompleta");
+
+// Crear carpeta si no existe (recursivo)
 if (!file_exists($rutaCompleta)) {
-    mkdir($rutaCompleta, 0755, true);
+    if (!mkdir($rutaCompleta, 0755, true)) {
+        die("ERROR: No se pudo crear la estructura de carpetas: $rutaCompleta");
+    }
+    error_log("INFO: Estructura de carpetas creada: $rutaCompleta");
 }
 
 // ============================================================
@@ -511,17 +530,39 @@ foreach ($alumnos as $alum) {
 
     // ============================================================
     // GUARDAR PDF CON NOMENCLATURA DIFERENCIADA
+    // + VALIDACIÓN: Buscar archivos existentes por ID de alumno
     // ============================================================
     
     $fecha = date('Y-m-d_H-i-s');
     
     // Nomenclatura según estado: Boleta_Final_ o Boleta_Parcial_
     if ($boletaCompleta) {
+        $prefijoBusqueda = "Boleta_Final_{$id_alumno}_";
         $nombreArchivo = "Boleta_Final_{$id_alumno}_{$fecha}.pdf";
     } else {
+        $prefijoBusqueda = "Boleta_Parcial_{$id_alumno}_";
         $nombreArchivo = "Boleta_Parcial_{$id_alumno}_{$fecha}.pdf";
     }
     
+    // ── DEBUG: Logging detallado ──
+    error_log("DEBUG Grupal: Procesando alumno $id_alumno ($nombre_completo)");
+    error_log("DEBUG Grupal: Patrón de búsqueda: " . $prefijoBusqueda . "*.pdf");
+    
+    // ── VERIFICAR SI YA EXISTE ALGÚN RESPALDO DE ESTE ALUMNO ──
+    // Buscar archivos que coincidan con el patrón: Boleta_[Tipo]_[ID]_*.pdf
+    $patronBusqueda = $rutaCompleta . $prefijoBusqueda . '*.pdf';
+    $archivosExistentes = glob($patronBusqueda);
+    
+    error_log("DEBUG Grupal: Archivos encontrados: " . count($archivosExistentes));
+    
+    if (!empty($archivosExistentes)) {
+        $archivoExistente = basename($archivosExistentes[0]);
+        error_log("INFO: ✓ Respaldo ya existe para alumno $id_alumno: $archivoExistente - Omitiendo");
+        // NO incrementar contador, NO generar PDF
+        continue; // Saltar al siguiente alumno
+    }
+    
+    error_log("DEBUG Grupal: No existe respaldo previo, generando PDF");
     $rutaArchivo = $rutaCompleta . $nombreArchivo;
     
     try {

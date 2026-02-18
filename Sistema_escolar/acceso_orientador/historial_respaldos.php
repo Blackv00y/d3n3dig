@@ -52,62 +52,90 @@ function pesoGrado($nombre) {
 
 // ============================================================
 // ESCANEAR TODAS LAS CARPETAS DE LA ESCUELA
-// Estructura en disco: respaldos/boletas/{id_escuela}/grupos/{Grado Romano}/
+// Nueva estructura: respaldos/boletas/{ID}/[GENERACIÓN]/[TURNO]/grupos/{GRADO GRUPO}/
 // ============================================================
-$rutaGrupos = __DIR__ . '/respaldos/boletas/' . $id_escuela . '/grupos/';
-$carpetas   = [];
+$rutaBaseEscuela = __DIR__ . '/respaldos/boletas/' . $id_escuela . '/';
+$carpetas = [];
 
-if (is_dir($rutaGrupos)) {
-    $dirs = array_diff(scandir($rutaGrupos), ['.', '..']);
+if (is_dir($rutaBaseEscuela)) {
+    // Escanear todas las generaciones
+    $generaciones = array_diff(scandir($rutaBaseEscuela), ['.', '..']);
+    
+    foreach ($generaciones as $generacion) {
+        $rutaGeneracion = $rutaBaseEscuela . $generacion . '/';
+        if (!is_dir($rutaGeneracion)) continue;
+        
+        // Escanear todos los turnos dentro de la generación
+        $turnos = array_diff(scandir($rutaGeneracion), ['.', '..']);
+        
+        foreach ($turnos as $turno) {
+            $rutaTurno = $rutaGeneracion . $turno . '/';
+            if (!is_dir($rutaTurno)) continue;
+            
+            // Verificar que exista la carpeta 'grupos'
+            $rutaGrupos = $rutaTurno . 'grupos/';
+            if (!is_dir($rutaGrupos)) continue;
+            
+            // Escanear carpetas de grupos
+            $gruposEnTurno = array_diff(scandir($rutaGrupos), ['.', '..']);
+            
+            foreach ($gruposEnTurno as $nombreCarpetaGrupo) {
+                $rutaCarpeta = $rutaGrupos . $nombreCarpetaGrupo . '/';
+                if (!is_dir($rutaCarpeta)) continue;
 
-    foreach ($dirs as $nombreCarpeta) {
-        $rutaCarpeta = $rutaGrupos . $nombreCarpeta . '/';
-        if (!is_dir($rutaCarpeta)) continue;
+                $archivosEnCarpeta = [];
+                $aniosEnCarpeta = [];
 
-        $archivosEnCarpeta = [];
-        $aniosEnCarpeta    = [];
+                foreach (array_diff(scandir($rutaCarpeta), ['.','..']) as $file) {
+                    if (pathinfo($file, PATHINFO_EXTENSION) !== 'pdf') continue;
 
-        foreach (array_diff(scandir($rutaCarpeta), ['.','..']) as $file) {
-            if (pathinfo($file, PATHINFO_EXTENSION) !== 'pdf') continue;
+                    $rutaArchivo = $rutaCarpeta . $file;
+                    $anio = '';
+                    if (preg_match('/_(\d{4})-\d{2}-\d{2}_/', $file, $m)) {
+                        $anio = $m[1];
+                        if (!in_array($anio, $aniosEnCarpeta)) $aniosEnCarpeta[] = $anio;
+                    }
 
-            $rutaArchivo = $rutaCarpeta . $file;
-            $anio = '';
-            if (preg_match('/_(\d{4})-\d{2}-\d{2}_/', $file, $m)) {
-                $anio = $m[1];
-                if (!in_array($anio, $aniosEnCarpeta)) $aniosEnCarpeta[] = $anio;
+                    $archivosEnCarpeta[] = [
+                        'nombre'     => $file,
+                        'tamano'     => filesize($rutaArchivo),
+                        'fecha'      => filemtime($rutaArchivo),
+                        'tipo'       => str_contains($file, 'Boleta_Final_')   ? 'Final'
+                                      : (str_contains($file, 'Boleta_Parcial_') ? 'Parcial' : 'Otro'),
+                        'anio'       => $anio,
+                        'carpeta'    => $nombreCarpetaGrupo,
+                        'generacion' => $generacion,
+                        'turno'      => $turno,
+                    ];
+                }
+
+                // Más reciente primero
+                usort($archivosEnCarpeta, fn($a,$b) => $b['fecha'] - $a['fecha']);
+                rsort($aniosEnCarpeta);
+
+                // Extraer grado del primer token (ej. "Primero I" → "Primero")
+                $partes = explode(' ', $nombreCarpetaGrupo, 2);
+                $gradoCarpeta = normalizarGrado($partes[0] ?? $nombreCarpetaGrupo);
+                $grupoCarpeta = $partes[1] ?? '';
+
+                // Clave única combinando generación + turno + grupo
+                $claveUnica = $generacion . ' · ' . $turno . ' · ' . $nombreCarpetaGrupo;
+
+                $carpetas[$claveUnica] = [
+                    'label'       => $nombreCarpetaGrupo . ' (' . $turno . ' - ' . $generacion . ')',
+                    'grado_texto' => $gradoCarpeta,
+                    'grupo_texto' => $grupoCarpeta,
+                    'grado_peso'  => pesoGrado($gradoCarpeta),
+                    'generacion'  => $generacion,
+                    'turno'       => $turno,
+                    'archivos'    => $archivosEnCarpeta,
+                    'anios'       => $aniosEnCarpeta,
+                    'total'       => count($archivosEnCarpeta),
+                    'finales'     => count(array_filter($archivosEnCarpeta, fn($a) => $a['tipo'] === 'Final')),
+                    'parciales'   => count(array_filter($archivosEnCarpeta, fn($a) => $a['tipo'] === 'Parcial')),
+                ];
             }
-
-            $archivosEnCarpeta[] = [
-                'nombre'  => $file,
-                'tamano'  => filesize($rutaArchivo),
-                'fecha'   => filemtime($rutaArchivo),
-                'tipo'    => str_contains($file, 'Boleta_Final_')   ? 'Final'
-                           : (str_contains($file, 'Boleta_Parcial_') ? 'Parcial' : 'Otro'),
-                'anio'    => $anio,
-                'carpeta' => $nombreCarpeta,
-            ];
         }
-
-        // Más reciente primero
-        usort($archivosEnCarpeta, fn($a,$b) => $b['fecha'] - $a['fecha']);
-        rsort($aniosEnCarpeta);
-
-        // Extraer grado del primer token del nombre de carpeta (ej. "Primero I" → "Primero")
-        $partes = explode(' ', $nombreCarpeta, 2);
-        $gradoCarpeta = normalizarGrado($partes[0] ?? $nombreCarpeta);
-        $grupoCarpeta = $partes[1] ?? '';
-
-        $carpetas[$nombreCarpeta] = [
-            'label'       => $nombreCarpeta,
-            'grado_texto' => $gradoCarpeta,
-            'grupo_texto' => $grupoCarpeta,
-            'grado_peso'  => pesoGrado($gradoCarpeta),
-            'archivos'    => $archivosEnCarpeta,
-            'anios'       => $aniosEnCarpeta,
-            'total'       => count($archivosEnCarpeta),
-            'finales'     => count(array_filter($archivosEnCarpeta, fn($a) => $a['tipo'] === 'Final')),
-            'parciales'   => count(array_filter($archivosEnCarpeta, fn($a) => $a['tipo'] === 'Parcial')),
-        ];
     }
 }
 
@@ -514,6 +542,8 @@ mysqli_close($conexion);
                                         data-action="preview"
                                         data-archivo="<?= htmlspecialchars($arch['nombre']) ?>"
                                         data-carpeta="<?= htmlspecialchars($arch['carpeta']) ?>"
+                                        data-generacion="<?= htmlspecialchars($arch['generacion']) ?>"
+                                        data-turno="<?= htmlspecialchars($arch['turno']) ?>"
                                         title="Vista previa">
                                     <i class="fas fa-eye"></i>
                                 </button>
@@ -521,6 +551,8 @@ mysqli_close($conexion);
                                         data-action="download"
                                         data-archivo="<?= htmlspecialchars($arch['nombre']) ?>"
                                         data-carpeta="<?= htmlspecialchars($arch['carpeta']) ?>"
+                                        data-generacion="<?= htmlspecialchars($arch['generacion']) ?>"
+                                        data-turno="<?= htmlspecialchars($arch['turno']) ?>"
                                         title="Descargar">
                                     <i class="fas fa-download"></i>
                                 </button>
@@ -599,16 +631,16 @@ function toggleFolder(btn, id) {
 }
 
 // ── Previsualizar PDF en modal ──────────────────────────────────────
-function previsualizarPDF(archivo, carpeta) {
-    const url = `descargar_pdf.php?archivo=${encodeURIComponent(archivo)}&carpeta=${encodeURIComponent(carpeta)}&accion=visualizar`;
+function previsualizarPDF(archivo, carpeta, generacion, turno) {
+    const url = `descargar_pdf.php?archivo=${encodeURIComponent(archivo)}&carpeta=${encodeURIComponent(carpeta)}&generacion=${encodeURIComponent(generacion)}&turno=${encodeURIComponent(turno)}&accion=visualizar`;
     document.getElementById('preview-filename').textContent = archivo;
     document.getElementById('pdf-iframe').src = url;
     new bootstrap.Modal(document.getElementById('modalPreviewPDF')).show();
 }
 
 // ── Descargar PDF ───────────────────────────────────────────────────
-function descargarPDF(archivo, carpeta) {
-    window.location.href = `descargar_pdf.php?archivo=${encodeURIComponent(archivo)}&carpeta=${encodeURIComponent(carpeta)}&accion=descargar`;
+function descargarPDF(archivo, carpeta, generacion, turno) {
+    window.location.href = `descargar_pdf.php?archivo=${encodeURIComponent(archivo)}&carpeta=${encodeURIComponent(carpeta)}&generacion=${encodeURIComponent(generacion)}&turno=${encodeURIComponent(turno)}&accion=descargar`;
 }
 
 // ── Limpiar iframe al cerrar el modal ──────────────────────────────
@@ -621,9 +653,9 @@ document.getElementById('modalPreviewPDF')
 document.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
-    const { action, archivo, carpeta } = btn.dataset;
-    if (action === 'preview')  previsualizarPDF(archivo, carpeta);
-    if (action === 'download') descargarPDF(archivo, carpeta);
+    const { action, archivo, carpeta, generacion, turno } = btn.dataset;
+    if (action === 'preview')  previsualizarPDF(archivo, carpeta, generacion, turno);
+    if (action === 'download') descargarPDF(archivo, carpeta, generacion, turno);
 });
 
 // ── Buscador global ─────────────────────────────────────────────────

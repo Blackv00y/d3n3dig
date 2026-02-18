@@ -88,39 +88,45 @@ function boletaEstaCompleta($materias, $calificaciones) {
 
 // ============================================================
 // FUNCIÓN PARA GUARDAR PDF CON LÓGICA CONDICIONAL
+// Arquitectura: respaldos/boletas/[ID_ESCUELA]/[GENERACIÓN]/[TURNO]/grupos/[GRADO GRUPO]/
 // ============================================================
-function guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $debeGuardar, $esForzado = false) {
+function guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $turno, $debeGuardar, $esForzado = false) {
     // Si no debe guardar y tampoco es forzado, retornar false
     if (!$debeGuardar && !$esForzado) {
         error_log("INFO: Respaldo NO ejecutado - Boleta incompleta y no forzado (Alumno: $id_alumno)");
         return false;
     }
     
+    // ── NUEVA ARQUITECTURA DE CARPETAS ──
+    // Generación actual: año del ciclo escolar
+    $generacionActual = '2025'; // Puedes cambiarlo o leerlo de configuración
+    
+    // Turno normalizado (Matutino, Vespertino, Nocturno)
+    $turnoNormalizado = ucfirst(strtolower(trim($turno)));
+    
+    // Grado y grupo normalizados
+    $gradoNormalizado = normalizarGrado($grado);
+    $grupoRomano = convertirGrupoARomano($grupo);
+    $nombreCarpetaGrupo = $gradoNormalizado . ' ' . $grupoRomano;
+    
+    // Construir ruta completa según nueva arquitectura
     $rutaBase = __DIR__ . '/respaldos/boletas/';
+    $rutaCompleta = $rutaBase 
+                  . $id_escuela . '/'
+                  . 'Generación ' . $generacionActual . '/'
+                  . $turnoNormalizado . '/'
+                  . 'grupos/'
+                  . $nombreCarpetaGrupo . '/';
     
-    // Lista de escuelas con organización por grado y grupo
-    $escuelasConGrupos = [63];
+    error_log("INFO: Ruta destino: $rutaCompleta");
     
-    if (in_array($id_escuela, $escuelasConGrupos)) {
-        // Organización por grado y grupo
-        $gradoNormalizado = normalizarGrado($grado);
-        $grupoRomano = convertirGrupoARomano($grupo);
-        $nombreCarpetaGrupo = $gradoNormalizado . ' ' . $grupoRomano;
-        $rutaCompleta = $rutaBase . $id_escuela . '/grupos/' . $nombreCarpetaGrupo . '/';
-        
-        error_log("INFO: Escuela $id_escuela - Organización por grado y grupo");
-        error_log("INFO: Grado: '$grado' → '$gradoNormalizado', Grupo: '$grupo' → '$grupoRomano'");
-    } else {
-        // Organización simple
-        $rutaCompleta = $rutaBase . $id_escuela . '/';
-    }
-    
-    // Crear estructura de carpetas si no existe
+    // Crear estructura de carpetas si no existe (recursivo)
     if (!file_exists($rutaCompleta)) {
         if (!mkdir($rutaCompleta, 0755, true)) {
             error_log("ERROR: No se pudo crear la carpeta: $rutaCompleta");
             return false;
         }
+        error_log("INFO: Carpeta creada: $rutaCompleta");
     }
     
     // Verificar permisos de escritura
@@ -134,12 +140,36 @@ function guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $debe
     
     if ($esForzado) {
         $tipoRespaldo = "Manual";
+        $prefijoBusqueda = "Boleta_Manual_{$id_alumno}_";
         $nombreArchivo = "Boleta_Manual_{$id_alumno}_{$fecha}.pdf";
     } else {
         $tipoRespaldo = "Final";
+        $prefijoBusqueda = "Boleta_Final_{$id_alumno}_";
         $nombreArchivo = "Boleta_Final_{$id_alumno}_{$fecha}.pdf";
     }
     
+    // ── DEBUG: Logging detallado ──
+    error_log("DEBUG: Buscando duplicados para alumno $id_alumno");
+    error_log("DEBUG: Ruta de búsqueda: " . $rutaCompleta);
+    error_log("DEBUG: Patrón de búsqueda: " . $prefijoBusqueda . "*.pdf");
+    error_log("DEBUG: Ruta completa glob: " . $rutaCompleta . $prefijoBusqueda . "*.pdf");
+    
+    // ── VALIDACIÓN: Buscar si ya existe algún archivo de este alumno con este prefijo ──
+    $patronBusqueda = $rutaCompleta . $prefijoBusqueda . '*.pdf';
+    $archivosExistentes = glob($patronBusqueda);
+    
+    error_log("DEBUG: Archivos encontrados: " . count($archivosExistentes));
+    if (!empty($archivosExistentes)) {
+        error_log("DEBUG: Archivos existentes: " . implode(', ', array_map('basename', $archivosExistentes)));
+    }
+    
+    if (!empty($archivosExistentes)) {
+        $archivoExistente = basename($archivosExistentes[0]);
+        error_log("INFO: ✓ Ya existe un respaldo para alumno $id_alumno: $archivoExistente - Omitiendo guardado");
+        return 'exists'; // Retornar código especial para informar que ya existe
+    }
+    
+    error_log("DEBUG: No se encontraron duplicados, procediendo a guardar");
     $rutaArchivo = $rutaCompleta . $nombreArchivo;
     
     // Guardar el PDF en el servidor
@@ -452,7 +482,7 @@ foreach($periodos as $p) {
 // ============================================================
 // GUARDAR RESPALDO EN SERVIDOR (LÓGICA CONDICIONAL MANTENIDA)
 // ============================================================
-$rutaRespaldo = guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $debeGuardarRespaldo, $forzar_respaldo);
+$rutaRespaldo = guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $turno, $debeGuardarRespaldo, $forzar_respaldo);
 
 if ($rutaRespaldo) {
     $tipoRespaldo = $forzar_respaldo ? "MANUAL" : "AUTOMÁTICO";
