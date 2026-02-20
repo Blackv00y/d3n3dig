@@ -110,27 +110,38 @@ function obtenerNombreAlumno($id_alumno, $id_escuela, $conexion, &$cache) {
 // ============================================================
 // ESCANEAR CARPETAS CON NUEVA ESTRUCTURA
 // ============================================================
-$rutaBase = __DIR__ . '/respaldos/boletas/' . $id_escuela . '/';
+$rutaBase = __DIR__ . '/respaldos/boletas/' . $id_escuela . '/generación/';
 $carpetas = [];
 $generacionesEncontradas = [];
 $aniosEncontrados = [];
 
+// DEBUG: Mostrar ruta de exploración
+echo '<div style="background:#fff3cd; border:2px solid #ffc107; border-radius:8px; padding:12px; margin:15px 0; font-size:0.9rem;">';
+echo '🔍 <strong>Buscando en:</strong> ' . realpath($rutaBase ?: __DIR__) . '<br>';
+echo '📁 <strong>Ruta existe:</strong> ' . (is_dir($rutaBase) ? '✅ SÍ' : '❌ NO');
+echo '</div>';
+
 if (is_dir($rutaBase)) {
-    $generaciones = array_diff(scandir($rutaBase), ['.', '..']);
+    // NIVEL 1: Explorar AÑOS dentro de /generación/
+    $aniosDetectados = glob($rutaBase . '*', GLOB_ONLYDIR);
     
-    foreach ($generaciones as $generacion) {
+    foreach ($aniosDetectados as $rutaAnio) {
+        $nombreAnio = basename($rutaAnio);
+        $generacion = $nombreAnio; // Usar año como generación
+        
         if (!empty($filtroGeneracion) && $generacion !== $filtroGeneracion) continue;
         
-        $rutaGeneracion = $rutaBase . $generacion . '/';
-        if (!is_dir($rutaGeneracion)) continue;
+        // NIVEL 2: Explorar TURNOS
+        $turnos = glob($rutaAnio . '/*', GLOB_ONLYDIR);
         
-        $turnos = array_diff(scandir($rutaGeneracion), ['.', '..']);
-        
-        foreach ($turnos as $turno) {
-            $rutaTurno = $rutaGeneracion . $turno . '/';
-            if (!is_dir($rutaTurno)) continue;
+        foreach ($turnos as $rutaTurnoCompleta) {
+            $turno = basename($rutaTurnoCompleta);
             
-            $rutaGrupos = $rutaTurno . 'grupos/';
+            // NIVEL 3: Buscar "Grupos" o "grupos"
+            $rutaGrupos = $rutaTurnoCompleta . '/Grupos/';
+            if (!is_dir($rutaGrupos)) {
+                $rutaGrupos = $rutaTurnoCompleta . '/grupos/';
+            }
             if (!is_dir($rutaGrupos)) continue;
             
             $gruposEnTurno = array_diff(scandir($rutaGrupos), ['.', '..']);

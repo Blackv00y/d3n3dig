@@ -1,8 +1,6 @@
 <?php
-// generar_respaldo_grupal.php — CON VALIDACIÓN COMPLETA/INCOMPLETA + GENERACIÓN DINÁMICA
+// generar_respaldo_grupal.php — CON VALIDACIÓN COMPLETA/INCOMPLETA
 // Genera PDFs individuales con nomenclatura diferenciada según estado
-// Arquitectura: respaldos/boletas/[ID_ESCUELA]/[GENERACIÓN]/[TURNO]/grupos/[GRADO GRUPO]/
-
 session_start();
 if (!isset($_SESSION['id_credencial'])) exit;
 
@@ -73,9 +71,16 @@ function normalizarGrado($grado) {
 }
 
 // ============================================================
-// FUNCIÓN: VERIFICAR SI BOLETA ESTÁ COMPLETA
+// NUEVA FUNCIÓN: VERIFICAR SI BOLETA ESTÁ COMPLETA
 // ============================================================
 
+/**
+ * Verifica si todas las materias del alumno tienen los 3 parciales capturados
+ * 
+ * @param array $materias - Array de materias asignadas al alumno
+ * @param array $calificaciones - Array de calificaciones del alumno
+ * @return bool - true si TODAS las materias tienen 3 parciales numéricos
+ */
 function boletaEstaCompleta($materias, $calificaciones) {
     $totalMaterias = count($materias);
     $materiasCompletas = 0;
@@ -83,8 +88,9 @@ function boletaEstaCompleta($materias, $calificaciones) {
     foreach ($materias as $mat) {
         $id_materia = (int)$mat['id_materia'];
         
+        // Verificar si existe registro de calificación para esta materia
         if (!isset($calificaciones[$id_materia])) {
-            continue;
+            continue; // Materia sin calificaciones = incompleta
         }
         
         $cal = $calificaciones[$id_materia];
@@ -92,12 +98,16 @@ function boletaEstaCompleta($materias, $calificaciones) {
         $p2 = $cal['segundo_parcial'];
         $p3 = $cal['tercer_parcial'];
         
+        // Criterio estricto: Los 3 parciales deben ser numéricos (no NULL)
+        // is_numeric() retorna true para valores numéricos, false para NULL
         if (is_numeric($p1) && is_numeric($p2) && is_numeric($p3)) {
             $materiasCompletas++;
         }
     }
     
+    // Solo está completa si TODAS las materias tienen 3 parciales
     $estaCompleta = ($materiasCompletas === $totalMaterias && $totalMaterias > 0);
+    
     return $estaCompleta;
 }
 
@@ -109,6 +119,9 @@ $grado = $_GET['grado'] ?? '';
 $grupo = $_GET['grupo'] ?? '';
 $turno = $_GET['turno'] ?? '';
 
+// todo=1 → respaldar TODOS los alumnos (completos e incompletos)
+// todo=0 → respaldar SOLO los alumnos con boleta completa (los 3 parciales capturados)
+// Defecto: 1 (respalda todo — comportamiento más seguro)
 $respaldarTodo = (isset($_GET['todo']) && (int)$_GET['todo'] === 0) ? false : true;
 
 if (!$grado || !$grupo || !$turno) die("Parámetros incompletos.");
@@ -121,14 +134,70 @@ mysqli_stmt_execute($stmt);
 $id_escuela = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt))['id_escuela'];
 
 // ============================================================
-// CONFIGURACIÓN DE RUTAS BASE
+// CONSTRUIR RUTA DE RESPALDO - ARQUITECTURA ESTRICTA
+// respaldos/boletas/[ID_ESCUELA]/generación/[AÑO]/[TURNO]/Grupos/[GRADO_GRUPO_ROMANO]/
 // ============================================================
 
-$rutaBase = __DIR__ . '/respaldos/boletas/';
-$gradoNormalizado = normalizarGrado($grado);
-$grupoRomano = convertirGrupoARomano($grupo);
+// ── 1. DETECCIÓN DINÁMICA DEL AÑO (de la fecha del sistema) ──
+$anioActual = date('Y');  // Detecta automáticamente el año del sistema
+
+// ── 2. NORMALIZACIÓN DE COMPONENTES ──
+$turnoNormalizado = ucfirst(strtolower(trim($turno)));  // Matutino, Vespertino, Nocturno
+$gradoNormalizado = normalizarGrado($grado);            // Primero, Segundo, etc.
+$grupoRomano = convertirGrupoARomano($grupo);           // I, II, III, etc.
 $nombreCarpetaGrupo = $gradoNormalizado . ' ' . $grupoRomano;
-$turnoNormalizado = ucfirst(strtolower(trim($turno)));
+
+// ── 3. CONSTRUCCIÓN DE RUTA PASO A PASO (estrictamente jerárquica) ──
+$rutaBase = __DIR__ . '/respaldos/boletas/';
+
+// Arquitectura completa según especificación
+$rutaCompleta = $rutaBase 
+              . $id_escuela . '/'
+              . 'generación/'
+              . $anioActual . '/'
+              . $turnoNormalizado . '/'
+              . 'Grupos/'
+              . $nombreCarpetaGrupo . '/';
+
+// ── 4. LOGGING DETALLADO PARA DEBUG ──
+error_log("═══════════════════════════════════════════════════════════════");
+error_log("RESPALDO GRUPAL - CONSTRUCCIÓN DE RUTA");
+error_log("═══════════════════════════════════════════════════════════════");
+error_log("Año detectado del sistema: $anioActual");
+error_log("ID Escuela: $id_escuela");
+error_log("Turno normalizado: $turnoNormalizado");
+error_log("Grupo completo: $nombreCarpetaGrupo");
+error_log("Ruta completa final: $rutaCompleta");
+error_log("═══════════════════════════════════════════════════════════════");
+
+// ── 5. CREACIÓN RECURSIVA DE CARPETAS ──
+if (!file_exists($rutaCompleta)) {
+    error_log("INFO: La ruta no existe. Creando estructura completa...");
+    
+    // mkdir con recursive=true crea TODAS las carpetas intermedias de una vez
+    if (!mkdir($rutaCompleta, 0755, true)) {
+        $ultimoError = error_get_last();
+        error_log("ERROR CRÍTICO: No se pudo crear la estructura de carpetas");
+        error_log("ERROR: Ruta: $rutaCompleta");
+        error_log("ERROR: Mensaje: " . ($ultimoError['message'] ?? 'Desconocido'));
+        die("ERROR: No se pudo crear la estructura de carpetas. Verifica permisos.");
+    }
+    
+    error_log("✓ Estructura de carpetas creada exitosamente");
+} else {
+    error_log("INFO: La ruta ya existe");
+}
+
+// ── 6. VALIDACIÓN FINAL: VERIFICAR PERMISOS DE ESCRITURA ──
+if (!is_writable($rutaCompleta)) {
+    error_log("ERROR CRÍTICO: La carpeta existe pero NO tiene permisos de escritura");
+    error_log("ERROR: Ruta: $rutaCompleta");
+    error_log("ERROR: Permisos actuales: " . substr(sprintf('%o', fileperms($rutaCompleta)), -4));
+    die("ERROR: Carpeta sin permisos de escritura. Ejecuta: chmod 755 " . $rutaCompleta);
+}
+
+error_log("✓ Permisos de escritura verificados - La ruta está lista para guardar archivos");
+error_log("═══════════════════════════════════════════════════════════════");
 
 // ============================================================
 // OBTENER ALUMNOS DEL GRUPO
@@ -175,56 +244,24 @@ class BoletaPDF extends FPDF {
 }
 
 // ============================================================
-// CONTADORES
+// CONTADORES Y REGISTRO DE ESTATUS
 // ============================================================
 
 $cantidad_generada = 0;
 $boletas_finales = 0;
 $boletas_parciales = 0;
+$estatus_grupo = []; // Registro de control
 
 // ============================================================
-// BUCLE: PROCESAR CADA ALUMNO
+// BUCLE: PROCESAR CADA ALUMNO CON VALIDACIÓN
 // ============================================================
 
 foreach ($alumnos as $alum) {
+    $nombre_completo = $alum['nombre_credencial'] . ' ' . $alum['apellidos_decrypted'];
     $id_alumno = $alum['id_credencial'];
-    
-    // ── CONSULTAR GENERACIÓN DEL ALUMNO DESDE BD ──
-    $stmtGen = mysqli_prepare($conexion, 
-        "SELECT generacion FROM credenciales WHERE id_credencial = ? AND id_escuela = ?");
-    if ($stmtGen) {
-        mysqli_stmt_bind_param($stmtGen, "ii", $id_alumno, $id_escuela);
-        mysqli_stmt_execute($stmtGen);
-        $resGen = mysqli_stmt_get_result($stmtGen);
-        $rowGen = mysqli_fetch_assoc($resGen);
-        
-        // Generación con fallback y sanitización
-        $generacionAlumno = !empty($rowGen['generacion']) 
-            ? preg_replace('/[^0-9\-]/', '', $rowGen['generacion'])  // "2025-2028"
-            : 'Sin-generacion';
-        
-        mysqli_stmt_close($stmtGen);
-    } else {
-        $generacionAlumno = 'Sin-generacion';
-    }
-    
-    // ── CONSTRUIR RUTA COMPLETA CON GENERACIÓN DINÁMICA ──
-    $rutaCompleta = $rutaBase 
-                  . $id_escuela . '/'
-                  . $generacionAlumno . '/'
-                  . $turnoNormalizado . '/'
-                  . 'grupos/'
-                  . $nombreCarpetaGrupo . '/';
-    
-    // Crear carpeta si no existe
-    if (!file_exists($rutaCompleta)) {
-        if (!mkdir($rutaCompleta, 0755, true)) {
-            error_log("ERROR: No se pudo crear: $rutaCompleta");
-            continue;
-        }
-    }
-    
-    // ── OBTENER DATOS COMPLETOS DEL ALUMNO ──
+    $id_escuela_alum = $alum['id_escuela'];
+
+    // Obtener datos completos del alumno
     $stmt = mysqli_prepare($conexion, "
         SELECT 
             c.nombre_credencial, 
@@ -256,7 +293,7 @@ foreach ($alumnos as $alum) {
     $cct = $alum_data['cct_escuela'];
     $curp_des = decryptData($alum_data['curp_credencial'], $secretKey) ?: '—';
 
-    // ── FOTO ──
+    // Foto
     $foto1 = !empty($alum_data['ruta_foto'])  
         ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum_data['ruta_foto'], '/')  
         : '';
@@ -266,7 +303,7 @@ foreach ($alumnos as $alum) {
     $foto_default = __DIR__ . '/fpdf/R.png';
     $foto = file_exists($foto1) ? $foto1 : (file_exists($foto2) ? $foto2 : $foto_default);
 
-    // ── MATERIAS ──
+    // Materias
     $materias = [];
     $stmt = mysqli_prepare($conexion, "
         SELECT m.id_materia, m.nombre_materia
@@ -275,12 +312,12 @@ foreach ($alumnos as $alum) {
         WHERE am.grado_credencial = ? AND am.grupo_credencial = ? AND am.turno_credencial = ? AND am.id_escuela = ?
         ORDER BY m.N_orden_materia
     ");
-    mysqli_stmt_bind_param($stmt, "sssi", $grado_alum, $grupo_alum, $turno_alum, $id_escuela);
+    mysqli_stmt_bind_param($stmt, "sssi", $grado_alum, $grupo_alum, $turno_alum, $id_escuela_alum);
     mysqli_stmt_execute($stmt);
     $result = mysqli_stmt_get_result($stmt);
     while ($row = mysqli_fetch_assoc($result)) $materias[] = $row;
 
-    // ── CALIFICACIONES ──
+    // Calificaciones
     $calificaciones = [];
     $stmt = mysqli_prepare($conexion, "SELECT id_materia, primer_parcial, segundo_parcial, tercer_parcial FROM calificaciones WHERE id_alumno = ?");
     mysqli_stmt_bind_param($stmt, "i", $id_alumno);
@@ -290,27 +327,39 @@ foreach ($alumnos as $alum) {
         $calificaciones[(int)$row['id_materia']] = $row;
     }
 
-    // ── VALIDAR BOLETA COMPLETA ──
+    // ============================================================
+    // VALIDACIÓN: ¿BOLETA COMPLETA O PARCIAL?
+    // ============================================================
+    
     $boletaCompleta = boletaEstaCompleta($materias, $calificaciones);
     $tipoBolet = $boletaCompleta ? 'FINAL' : 'PARCIAL';
     
-    // Filtro: si todo=0 y boleta incompleta, saltar alumno
+    // ── FILTRO: si todo=0 y la boleta está incompleta, saltar este alumno ──
     if (!$respaldarTodo && !$boletaCompleta) {
         $boletas_parciales++;
+        $estatus_grupo[] = ['nombre' => $nombre_completo, 'id' => $id_alumno, 'tipo' => 'OMITIDA'];
         error_log("INFO: Alumno $id_alumno ($nombre_completo) - OMITIDO (boleta incompleta, todo=0)");
         continue;
     }
     
+    // Registrar en el array de control
+    $estatus_grupo[] = [
+        'nombre' => $nombre_completo,
+        'id' => $id_alumno,
+        'tipo' => $tipoBolet
+    ];
+    
+    // Incrementar contador correspondiente
     if ($boletaCompleta) {
         $boletas_finales++;
     } else {
         $boletas_parciales++;
     }
     
-    error_log("INFO: Alumno $id_alumno ($nombre_completo) - Boleta $tipoBolet - Generación: $generacionAlumno");
+    error_log("INFO: Alumno $id_alumno ($nombre_completo) - Boleta $tipoBolet");
 
     // ============================================================
-    // GENERAR PDF
+    // GENERAR PDF (DISEÑO IDÉNTICO)
     // ============================================================
     
     $pdf = new BoletaPDF('P', 'mm', 'Letter');
@@ -513,10 +562,12 @@ foreach ($alumnos as $alum) {
 
     // ============================================================
     // GUARDAR PDF CON NOMENCLATURA DIFERENCIADA
+    // + VALIDACIÓN: Buscar archivos existentes por ID de alumno
     // ============================================================
     
     $fecha = date('Y-m-d_H-i-s');
     
+    // Nomenclatura según estado: Boleta_Final_ o Boleta_Parcial_
     if ($boletaCompleta) {
         $prefijoBusqueda = "Boleta_Final_{$id_alumno}_";
         $nombreArchivo = "Boleta_Final_{$id_alumno}_{$fecha}.pdf";
@@ -525,21 +576,31 @@ foreach ($alumnos as $alum) {
         $nombreArchivo = "Boleta_Parcial_{$id_alumno}_{$fecha}.pdf";
     }
     
-    // Verificar si ya existe respaldo de este alumno
+    // ── DEBUG: Logging detallado ──
+    error_log("DEBUG Grupal: Procesando alumno $id_alumno ($nombre_completo)");
+    error_log("DEBUG Grupal: Patrón de búsqueda: " . $prefijoBusqueda . "*.pdf");
+    
+    // ── VERIFICAR SI YA EXISTE ALGÚN RESPALDO DE ESTE ALUMNO ──
+    // Buscar archivos que coincidan con el patrón: Boleta_[Tipo]_[ID]_*.pdf
     $patronBusqueda = $rutaCompleta . $prefijoBusqueda . '*.pdf';
     $archivosExistentes = glob($patronBusqueda);
     
+    error_log("DEBUG Grupal: Archivos encontrados: " . count($archivosExistentes));
+    
     if (!empty($archivosExistentes)) {
-        error_log("INFO: ✓ Respaldo ya existe para alumno $id_alumno - Omitiendo");
-        continue;
+        $archivoExistente = basename($archivosExistentes[0]);
+        error_log("INFO: ✓ Respaldo ya existe para alumno $id_alumno: $archivoExistente - Omitiendo");
+        // NO incrementar contador, NO generar PDF
+        continue; // Saltar al siguiente alumno
     }
     
+    error_log("DEBUG Grupal: No existe respaldo previo, generando PDF");
     $rutaArchivo = $rutaCompleta . $nombreArchivo;
     
     try {
         $pdf->Output('F', $rutaArchivo);
         $cantidad_generada++;
-        error_log("INFO: ✓ PDF guardado - $nombreArchivo en $generacionAlumno");
+        error_log("INFO: ✓ PDF guardado - $nombreArchivo");
     } catch (Exception $e) {
         error_log("ERROR: Fallo al guardar PDF de alumno $id_alumno - " . $e->getMessage());
     }
@@ -548,7 +609,7 @@ foreach ($alumnos as $alum) {
 mysqli_close($conexion);
 
 // ============================================================
-// REGISTRO DE CONTROL
+// REGISTRO DE CONTROL (OPCIONAL - PARA LOG)
 // ============================================================
 
 error_log("INFO: ========================================");
@@ -559,11 +620,12 @@ error_log("INFO: Boletas PARCIALES: $boletas_parciales");
 error_log("INFO: ========================================");
 
 // ============================================================
-// RESPUESTA: JSON (AJAX) O REDIRECCIÓN
+// RESPUESTA: JSON (AJAX) O REDIRECCIÓN (NORMAL)
 // ============================================================
 
 $modoTexto = $respaldarTodo ? 'completo' : 'solo_listos';
 
+// ── Si es llamada AJAX, devolver JSON en lugar de redirigir ──
 if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     header('Content-Type: application/json');
     echo json_encode([
@@ -575,6 +637,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     exit();
 }
 
+// ── Si NO es AJAX, redirigir normalmente ──
 header("Location: boleta_alumnos_nueva.php?grado=" . urlencode($grado) . 
        "&grupo=" . urlencode($grupo) . 
        "&turno=" . urlencode($turno) . 

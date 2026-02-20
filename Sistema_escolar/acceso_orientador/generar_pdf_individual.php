@@ -97,41 +97,47 @@ function guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $turn
         return false;
     }
     
-    // ── NUEVA ARQUITECTURA DE CARPETAS ──
-    // Generación actual: año del ciclo escolar
-    $generacionActual = '2025'; // Puedes cambiarlo o leerlo de configuración
+    // ── 1. DETECCIÓN DINÁMICA DEL AÑO ──
+    $anioActual = date('Y');
     
-    // Turno normalizado (Matutino, Vespertino, Nocturno)
+    // ── 2. NORMALIZACIÓN DE COMPONENTES ──
     $turnoNormalizado = ucfirst(strtolower(trim($turno)));
-    
-    // Grado y grupo normalizados
     $gradoNormalizado = normalizarGrado($grado);
     $grupoRomano = convertirGrupoARomano($grupo);
     $nombreCarpetaGrupo = $gradoNormalizado . ' ' . $grupoRomano;
     
-    // Construir ruta completa según nueva arquitectura
+    // ── 3. CONSTRUCCIÓN DE RUTA ESTRICTA ──
+    // Arquitectura: respaldos/boletas/[ID]/generación/[AÑO]/[TURNO]/Grupos/[GRADO_GRUPO]/
     $rutaBase = __DIR__ . '/respaldos/boletas/';
+    
     $rutaCompleta = $rutaBase 
                   . $id_escuela . '/'
-                  . 'Generación ' . $generacionActual . '/'
+                  . 'generación/'
+                  . $anioActual . '/'
                   . $turnoNormalizado . '/'
-                  . 'grupos/'
+                  . 'Grupos/'
                   . $nombreCarpetaGrupo . '/';
     
-    error_log("INFO: Ruta destino: $rutaCompleta");
+    error_log("═══════════════════════════════════════════════════════════════");
+    error_log("RESPALDO INDIVIDUAL - Alumno $id_alumno");
+    error_log("Año detectado: $anioActual | Turno: $turnoNormalizado | Grupo: $nombreCarpetaGrupo");
+    error_log("Ruta: $rutaCompleta");
+    error_log("═══════════════════════════════════════════════════════════════");
     
-    // Crear estructura de carpetas si no existe (recursivo)
+    // ── 4. CREACIÓN RECURSIVA ──
     if (!file_exists($rutaCompleta)) {
         if (!mkdir($rutaCompleta, 0755, true)) {
-            error_log("ERROR: No se pudo crear la carpeta: $rutaCompleta");
+            $error = error_get_last();
+            error_log("ERROR: No se pudo crear carpeta: $rutaCompleta");
+            error_log("ERROR: " . ($error['message'] ?? 'Desconocido'));
             return false;
         }
-        error_log("INFO: Carpeta creada: $rutaCompleta");
+        error_log("✓ Carpeta creada");
     }
     
-    // Verificar permisos de escritura
+    // ── 5. VALIDACIÓN DE PERMISOS ──
     if (!is_writable($rutaCompleta)) {
-        error_log("ERROR: La carpeta no tiene permisos de escritura: $rutaCompleta");
+        error_log("ERROR: Sin permisos de escritura: $rutaCompleta");
         return false;
     }
     
