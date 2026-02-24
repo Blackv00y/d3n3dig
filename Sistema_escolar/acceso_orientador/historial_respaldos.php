@@ -107,6 +107,59 @@ function obtenerNombreAlumno($id_alumno, $id_escuela, $conexion, &$cache) {
     return $cache[$cacheKey];
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// FUNCIONES NUEVAS: GENERACIONES DE 3 AÑOS (de VERSION_B)
+// Modelo de preparatoria en México: ciclos de 3 años
+// ══════════════════════════════════════════════════════════════════════
+
+/**
+ * Calcula el rango de generación de 3 años al que pertenece un año
+ * Ejemplo: 2024 → "2024 - 2027", 2025 → "2024 - 2027", 2026 → "2024 - 2027"
+ */
+function calcularGeneracion($anio) {
+    $anio = (int)$anio;
+    $base = 2024;
+    $diferencia = $anio - $base;
+    $ciclo = floor($diferencia / 3);
+    $anioInicio = $base + ($ciclo * 3);
+    $anioFin = $anioInicio + 3;
+    
+    return "$anioInicio - $anioFin";
+}
+
+/**
+ * Extrae el año de inicio de un string de generación
+ * Ejemplo: "2024 - 2027" → 2024
+ */
+function extraerAnioInicioGeneracion($generacion) {
+    if (preg_match('/^(\d{4})\s*-\s*\d{4}$/', $generacion, $matches)) {
+        return (int)$matches[1];
+    }
+    return 0;
+}
+
+/**
+ * Extrae el año de fin de un string de generación
+ * Ejemplo: "2024 - 2027" → 2027
+ */
+function extraerAnioFinGeneracion($generacion) {
+    if (preg_match('/^\d{4}\s*-\s*(\d{4})$/', $generacion, $matches)) {
+        return (int)$matches[1];
+    }
+    return 0;
+}
+
+/**
+ * Verifica si un año pertenece a una generación
+ */
+function anioPerteneceAGeneracion($anio, $generacion) {
+    $inicio = extraerAnioInicioGeneracion($generacion);
+    $fin = extraerAnioFinGeneracion($generacion);
+    $anio = (int)$anio;
+    
+    return $anio >= $inicio && $anio < $fin;
+}
+
 // ============================================================
 // ESCANEAR CARPETAS CON NUEVA ESTRUCTURA
 // ============================================================
@@ -114,6 +167,19 @@ $rutaBase = __DIR__ . '/respaldos/boletas/' . $id_escuela . '/generación/';
 $carpetas = [];
 $generacionesEncontradas = [];
 $aniosEncontrados = [];
+
+// ═══════════════════════════════════════════════════════════════════
+// NUEVAS ESTRUCTURAS PARA FILTROS DINÁMICOS (de VERSION_B)
+// ═══════════════════════════════════════════════════════════════════
+$filtrosData = [
+    'generaciones' => [],  // Rangos de 3 años (ej: "2024 - 2027")
+    'anios' => [],         // Años individuales encontrados
+    'turnos' => [],
+    'grados' => [],
+    'grupos' => [],
+];
+
+$mapeoGeneracionAnios = []; // Mapeo de generación → años disponibles
 
 // DEBUG: Mostrar ruta de exploración
 echo '<div style="background:#fff3cd; border:2px solid #ffc107; border-radius:8px; padding:12px; margin:15px 0; font-size:0.9rem;">';
@@ -206,6 +272,36 @@ if (is_dir($rutaBase)) {
                     $generacionesEncontradas[] = $generacion;
                 }
                 
+                // ═══ NUEVAS: Poblar datos de filtros (de VERSION_B) ═══
+                // Calcular generación de 3 años
+                $generacionRango = calcularGeneracion($nombreAnio);
+                
+                // Agregar a filtrosData
+                if (!in_array($generacionRango, $filtrosData['generaciones'])) {
+                    $filtrosData['generaciones'][] = $generacionRango;
+                }
+                if (!in_array($nombreAnio, $filtrosData['anios'])) {
+                    $filtrosData['anios'][] = $nombreAnio;
+                }
+                if (!in_array($turno, $filtrosData['turnos'])) {
+                    $filtrosData['turnos'][] = $turno;
+                }
+                if (!in_array($gradoCarpeta, $filtrosData['grados'])) {
+                    $filtrosData['grados'][] = $gradoCarpeta;
+                }
+                if (!in_array($grupoCarpeta, $filtrosData['grupos'])) {
+                    $filtrosData['grupos'][] = $grupoCarpeta;
+                }
+                
+                // Mapear generación → años
+                if (!isset($mapeoGeneracionAnios[$generacionRango])) {
+                    $mapeoGeneracionAnios[$generacionRango] = [];
+                }
+                if (!in_array($nombreAnio, $mapeoGeneracionAnios[$generacionRango])) {
+                    $mapeoGeneracionAnios[$generacionRango][] = $nombreAnio;
+                }
+                // ═══ FIN NUEVAS ═══
+                
                 $carpetas[$claveUnica] = [
                     'label'        => $nombreCarpetaGrupo . ' (' . $turno . ' · ' . $generacion . ')',
                     'grado_texto'  => $gradoCarpeta,
@@ -233,6 +329,18 @@ uasort($carpetas, function($a, $b) {
 
 rsort($generacionesEncontradas);
 rsort($aniosEncontrados);
+
+// ═══ NUEVAS: Ordenar datos de filtros (de VERSION_B) ═══
+sort($filtrosData['generaciones']);
+sort($filtrosData['anios']);
+sort($filtrosData['turnos']);
+usort($filtrosData['grados'], fn($a, $b) => pesoGrado($a) - pesoGrado($b));
+sort($filtrosData['grupos']);
+
+foreach ($mapeoGeneracionAnios as &$anios) {
+    sort($anios);
+}
+// ═══ FIN NUEVAS ═══
 
 $totalCarpetas        = count($carpetas);
 $totalArchivosGlobal  = array_sum(array_column($carpetas, 'total'));
@@ -546,32 +654,81 @@ mysqli_close($conexion);
         </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════
+         SECCIÓN DE FILTROS MULTICRITERIO (NUEVA - de VERSION_B)
+    ═══════════════════════════════════════════════════════ -->
     <div class="filters-wrap">
+        <!-- Filtro: Generación (Rangos de 3 años) -->
         <div class="filter-group">
-            <label><i class="fas fa-layer-group me-1"></i>Generación:</label>
-            <select class="filter-select" onchange="aplicarFiltro('generacion', this.value)">
-                <option value="">Todas</option>
-                <?php foreach ($generacionesEncontradas as $gen): ?>
-                <option value="<?= htmlspecialchars($gen) ?>" <?= $filtroGeneracion === $gen ? 'selected' : '' ?>>
-                    <?= htmlspecialchars($gen) ?>
+            <label><i class="fas fa-graduation-cap me-1"></i>Generación (3 años):</label>
+            <select id="filtroGeneracionRango" class="filter-select">
+                <option value="">Todas las generaciones</option>
+                <?php foreach ($filtrosData['generaciones'] as $genRango): ?>
+                <option value="<?= htmlspecialchars($genRango) ?>" 
+                        <?= $filtroGeneracion && anioPerteneceAGeneracion($filtroGeneracion, $genRango) ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($genRango) ?>
                 </option>
                 <?php endforeach; ?>
             </select>
         </div>
 
+        <!-- Filtro: Año Específico (dentro de la generación) -->
         <div class="filter-group">
-            <label><i class="fas fa-calendar-alt me-1"></i>Año:</label>
-            <select class="filter-select" onchange="aplicarFiltro('anio', this.value)">
-                <option value="">Todos</option>
-                <?php foreach ($aniosEncontrados as $anio): ?>
+            <label><i class="fas fa-calendar-alt me-1"></i>Año Específico:</label>
+            <select id="filtroAnioEspecifico" class="filter-select">
+                <option value="">Todos los años</option>
+                <?php foreach ($filtrosData['anios'] as $anio): ?>
                 <option value="<?= htmlspecialchars($anio) ?>" <?= $filtroAnio === $anio ? 'selected' : '' ?>>
                     <?= htmlspecialchars($anio) ?>
                 </option>
                 <?php endforeach; ?>
             </select>
         </div>
+        
+        <!-- Filtro: Turno -->
+        <div class="filter-group">
+            <label><i class="fas fa-sun me-1"></i>Turno:</label>
+            <select id="filtroTurno" class="filter-select">
+                <option value="">Todos los turnos</option>
+                <?php foreach ($filtrosData['turnos'] as $t): ?>
+                <option value="<?= htmlspecialchars($t) ?>">
+                    <?= htmlspecialchars($t) ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        
+        <!-- Filtro: Grado -->
+        <div class="filter-group">
+            <label><i class="fas fa-layer-group me-1"></i>Grado:</label>
+            <select id="filtroGrado" class="filter-select">
+                <option value="">Todos los grados</option>
+                <?php foreach ($filtrosData['grados'] as $g): ?>
+                <option value="<?= htmlspecialchars($g) ?>">
+                    <?= htmlspecialchars($g) ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        
+        <!-- Filtro: Grupo -->
+        <div class="filter-group">
+            <label><i class="fas fa-users me-1"></i>Grupo:</label>
+            <select id="filtroGrupo" class="filter-select">
+                <option value="">Todos los grupos</option>
+                <?php foreach ($filtrosData['grupos'] as $gr): ?>
+                <option value="<?= htmlspecialchars($gr) ?>">
+                    <?= htmlspecialchars($gr) ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
 
-        <div style="align-self: flex-end;">
+        <!-- Botones -->
+        <div style="align-self: flex-end; display: flex; gap: 8px;">
+            <button class="btn-clear-filters" onclick="aplicarFiltrosMultiples()">
+                <i class="fas fa-filter me-1"></i>Filtrar
+            </button>
             <button class="btn-clear-filters" onclick="limpiarFiltros()">
                 <i class="fas fa-times me-1"></i>Limpiar
             </button>
@@ -792,6 +949,96 @@ document.addEventListener('click', (e) => {
     if (action === 'download') descargarPDF(archivo, carpeta, generacion, turno);
 });
 
+// ══════════════════════════════════════════════════════════════
+// NUEVAS FUNCIONES: FILTROS EN CASCADA (de VERSION_B)
+// ══════════════════════════════════════════════════════════════
+
+// Mapeo de generación → años (desde PHP)
+const mapeoGeneracionAnios = <?= json_encode($mapeoGeneracionAnios) ?>;
+
+// Filtro Generación → Año Específico (cascada)
+document.getElementById('filtroGeneracionRango').addEventListener('change', function() {
+    const selectAnio = document.getElementById('filtroAnioEspecifico');
+    const generacionSeleccionada = this.value;
+    
+    // Limpiar opciones actuales (excepto la primera)
+    selectAnio.innerHTML = '<option value="">Todos los años</option>';
+    
+    if (generacionSeleccionada && mapeoGeneracionAnios[generacionSeleccionada]) {
+        // Poblar con años de la generación seleccionada
+        mapeoGeneracionAnios[generacionSeleccionada].forEach(anio => {
+            const option = document.createElement('option');
+            option.value = anio;
+            option.textContent = anio;
+            selectAnio.appendChild(option);
+        });
+    } else {
+        // Si no hay generación seleccionada, mostrar todos los años
+        const todosLosAnios = <?= json_encode($filtrosData['anios']) ?>;
+        todosLosAnios.forEach(anio => {
+            const option = document.createElement('option');
+            option.value = anio;
+            option.textContent = anio;
+            selectAnio.appendChild(option);
+        });
+    }
+});
+
+// Aplicar todos los filtros seleccionados
+function aplicarFiltrosMultiples() {
+    const url = new URL(window.location.href);
+    
+    // Obtener valores de los filtros
+    const generacionRango = document.getElementById('filtroGeneracionRango').value;
+    const anioEspecifico = document.getElementById('filtroAnioEspecifico').value;
+    const turno = document.getElementById('filtroTurno').value;
+    const grado = document.getElementById('filtroGrado').value;
+    const grupo = document.getElementById('filtroGrupo').value;
+    
+    // Si hay generación seleccionada, guardar el primer año de ese rango
+    if (generacionRango) {
+        const anioInicio = generacionRango.split(' - ')[0];
+        url.searchParams.set('generacion', anioInicio);
+    } else {
+        url.searchParams.delete('generacion');
+    }
+    
+    // Año específico
+    if (anioEspecifico) {
+        url.searchParams.set('anio', anioEspecifico);
+    } else {
+        url.searchParams.delete('anio');
+    }
+    
+    // Turno
+    if (turno) {
+        url.searchParams.set('turno', turno);
+    } else {
+        url.searchParams.delete('turno');
+    }
+    
+    // Grado
+    if (grado) {
+        url.searchParams.set('grado', grado);
+    } else {
+        url.searchParams.delete('grado');
+    }
+    
+    // Grupo
+    if (grupo) {
+        url.searchParams.set('grupo', grupo);
+    } else {
+        url.searchParams.delete('grupo');
+    }
+    
+    window.location.href = url.toString();
+}
+
+// ══════════════════════════════════════════════════════════════
+// FUNCIONES ANTIGUAS (mantenidas por compatibilidad)
+// Nota: aplicarFiltro() ya no se usa pero se mantiene por si acaso
+// ══════════════════════════════════════════════════════════════
+
 function aplicarFiltro(tipo, valor) {
     const url = new URL(window.location.href);
     if (valor) {
@@ -806,6 +1053,9 @@ function limpiarFiltros() {
     const url = new URL(window.location.href);
     url.searchParams.delete('generacion');
     url.searchParams.delete('anio');
+    url.searchParams.delete('turno');
+    url.searchParams.delete('grado');
+    url.searchParams.delete('grupo');
     window.location.href = url.toString();
 }
 
@@ -835,6 +1085,26 @@ function filtrarArchivos(q) {
         }
     });
 }
+
+// ══════════════════════════════════════════════════════════════
+// INICIALIZACIÓN: Poblar años según generación preseleccionada
+// ══════════════════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', () => {
+    const generacionActual = document.getElementById('filtroGeneracionRango').value;
+    if (generacionActual) {
+        // Disparar evento change para actualizar años
+        document.getElementById('filtroGeneracionRango').dispatchEvent(new Event('change'));
+        
+        // Restaurar año seleccionado si existe
+        const anioActual = '<?= htmlspecialchars($filtroAnio) ?>';
+        if (anioActual) {
+            setTimeout(() => {
+                document.getElementById('filtroAnioEspecifico').value = anioActual;
+            }, 50);
+        }
+    }
+});
 </script>
 
 </body>
