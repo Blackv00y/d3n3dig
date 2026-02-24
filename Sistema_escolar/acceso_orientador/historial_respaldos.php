@@ -195,7 +195,20 @@ if (is_dir($rutaBase)) {
         $nombreAnio = basename($rutaAnio);
         $generacion = $nombreAnio; // Usar año como generación
         
-        if (!empty($filtroGeneracion) && $generacion !== $filtroGeneracion) continue;
+        // ═══ CORRECCIÓN: Verificar si el año pertenece a la generación seleccionada ═══
+        // Si hay filtro de generación, verificar que el año esté dentro del rango
+        if (!empty($filtroGeneracion)) {
+            // El filtro viene como año inicial (ej: "2024" de "2024 - 2027")
+            // Calcular el rango completo y verificar si nombreAnio está dentro
+            $generacionRangoDelAnio = calcularGeneracion($nombreAnio);
+            $generacionRangoFiltrada = calcularGeneracion($filtroGeneracion);
+            
+            // Comparar rangos completos
+            if ($generacionRangoDelAnio !== $generacionRangoFiltrada) {
+                continue; // Saltar si no pertenece a la generación seleccionada
+            }
+        }
+        // ═══ FIN CORRECCIÓN ═══
         
         // NIVEL 2: Explorar TURNOS
         $turnos = glob($rutaAnio . '/*', GLOB_ONLYDIR);
