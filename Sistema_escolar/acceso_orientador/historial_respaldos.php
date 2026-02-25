@@ -37,6 +37,9 @@ $grupo = $_GET['grupo'] ?? '';
 $turno = $_GET['turno'] ?? '';
 $filtroGeneracion = $_GET['generacion'] ?? '';
 $filtroAnio = $_GET['anio'] ?? '';
+$filtroTurno = $_GET['turno'] ?? '';      // ← NUEVO: Filtro de turno
+$filtroGrado = $_GET['grado'] ?? '';      // ← NUEVO: Filtro de grado
+$filtroGrupo = $_GET['grupo'] ?? '';      // ← NUEVO: Filtro de grupo
 
 // ============================================================
 // FUNCIONES AUXILIARES
@@ -216,6 +219,10 @@ if (is_dir($rutaBase)) {
         foreach ($turnos as $rutaTurnoCompleta) {
             $turno = basename($rutaTurnoCompleta);
             
+            // ═══ FILTRO DE TURNO ═══
+            if (!empty($filtroTurno) && $turno !== $filtroTurno) continue;
+            // ═══ FIN FILTRO TURNO ═══
+            
             // NIVEL 3: Buscar "Grupos" o "grupos"
             $rutaGrupos = $rutaTurnoCompleta . '/Grupos/';
             if (!is_dir($rutaGrupos)) {
@@ -278,6 +285,11 @@ if (is_dir($rutaBase)) {
                 $partes = explode(' ', $nombreCarpetaGrupo, 2);
                 $gradoCarpeta = normalizarGrado($partes[0] ?? $nombreCarpetaGrupo);
                 $grupoCarpeta = $partes[1] ?? '';
+                
+                // ═══ FILTROS DE GRADO Y GRUPO ═══
+                if (!empty($filtroGrado) && $gradoCarpeta !== normalizarGrado($filtroGrado)) continue;
+                if (!empty($filtroGrupo) && $grupoCarpeta !== $filtroGrupo) continue;
+                // ═══ FIN FILTROS GRADO Y GRUPO ═══
                 
                 $claveUnica = $generacion . '|' . $turno . '|' . $nombreCarpetaGrupo;
                 
@@ -360,6 +372,32 @@ $totalArchivosGlobal  = array_sum(array_column($carpetas, 'total'));
 $totalFinalesGlobal   = array_sum(array_column($carpetas, 'finales'));
 $totalParcialesGlobal = array_sum(array_column($carpetas, 'parciales'));
 
+// ═══════════════════════════════════════════════════════════════════
+// DATOS PARA GRÁFICA: Histórico de respaldos por año y tipo
+// ═══════════════════════════════════════════════════════════════════
+$datosGrafica = [];
+foreach ($carpetas as $carpeta) {
+    $anio = $carpeta['generacion'];
+    
+    if (!isset($datosGrafica[$anio])) {
+        $datosGrafica[$anio] = [
+            'completas' => 0,    // Finales
+            'incompletas' => 0   // Parciales + Manual
+        ];
+    }
+    
+    $datosGrafica[$anio]['completas'] += $carpeta['finales'];
+    $datosGrafica[$anio]['incompletas'] += $carpeta['parciales'];
+}
+
+// Ordenar por año
+ksort($datosGrafica);
+
+// Convertir a arrays para Chart.js
+$aniosGrafica = array_keys($datosGrafica);
+$completasGrafica = array_column($datosGrafica, 'completas');
+$incompletasGrafica = array_column($datosGrafica, 'incompletas');
+
 // ── CERRAR CONEXIÓN ──
 mysqli_close($conexion);
 ?>
@@ -373,6 +411,9 @@ mysqli_close($conexion);
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     
     <style>
         body {
@@ -441,8 +482,35 @@ mysqli_close($conexion);
         .stat-card.st-grupos  { border-top-color: #6f42c1; }
         .stat-card.st-final   { border-top-color: #28a745; }
         .stat-card.st-parcial { border-top-color: #ffc107; }
+        .stat-card.st-grafica { 
+            border-top-color: #ff6b6b; 
+            cursor: pointer;
+            transition: all .3s;
+        }
+        .stat-card.st-grafica:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(255,107,107,.3);
+        }
         .stat-number { font-size: 2.2rem; font-weight: 700; color: #1a355e; line-height: 1; }
         .stat-label  { color: #6c757d; font-size: .82rem; margin-top: 6px; }
+        
+        /* Modal de gráfica */
+        .modal-grafica .modal-content {
+            border-radius: 16px;
+            border: none;
+        }
+        .modal-grafica .modal-header {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 16px 16px 0 0;
+        }
+        .modal-grafica .modal-body {
+            padding: 30px;
+        }
+        #chartContainer {
+            position: relative;
+            height: 400px;
+        }
 
         .filters-wrap {
             display: flex;
@@ -664,6 +732,37 @@ mysqli_close($conexion);
         <div class="stat-card st-parcial">
             <div class="stat-number"><?= $totalParcialesGlobal ?></div>
             <div class="stat-label"><i class="fas fa-clock me-1"></i>Parciales</div>
+        </div>
+        
+        <!-- ═══ NUEVA TARJETA INTERACTIVA CON GRÁFICA ═══ -->
+        <div class="stat-card st-grafica" onclick="mostrarGrafica()" title="Haz clic para ver la gráfica de respaldos">
+            <div class="stat-number"><i class="fas fa-chart-bar"></i></div>
+            <div class="stat-label"><i class="fas fa-chart-line me-1"></i>Ver Gráfica</div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         MODAL DE GRÁFICA
+    ═══════════════════════════════════════════════════════ -->
+    <div class="modal fade modal-grafica" id="modalGrafica" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-chart-bar me-2"></i>Histórico de Respaldos
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="chartContainer">
+                        <canvas id="respaldosChart"></canvas>
+                    </div>
+                    <div class="mt-3 text-center text-muted small">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Gráfica generada con los respaldos encontrados en el sistema
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -938,15 +1037,29 @@ function toggleFolder(btn, id) {
 }
 
 function previsualizarPDF(archivo, carpeta, generacion, turno) {
+    // Construir URL correcta según arquitectura: generación/[AÑO]/[TURNO]/Grupos/[CARPETA]/
+    const url = `descargar_pdf.php?` +
+        `archivo=${encodeURIComponent(archivo)}` +
+        `&anio=${encodeURIComponent(generacion)}` +  // generacion es realmente el año
+        `&turno=${encodeURIComponent(turno)}` +
+        `&carpeta=${encodeURIComponent(carpeta)}` +
+        `&accion=visualizar`;
+    
     document.getElementById('preview-filename').textContent = archivo;
-    document.getElementById('pdf-iframe').src = 
-        `descargar_pdf.php?archivo=${encodeURIComponent(archivo)}&carpeta=${encodeURIComponent(carpeta)}&generacion=${encodeURIComponent(generacion)}&turno=${encodeURIComponent(turno)}&accion=visualizar`;
+    document.getElementById('pdf-iframe').src = url;
     new bootstrap.Modal(document.getElementById('modalPreviewPDF')).show();
 }
 
 function descargarPDF(archivo, carpeta, generacion, turno) {
-    window.location.href = 
-        `descargar_pdf.php?archivo=${encodeURIComponent(archivo)}&carpeta=${encodeURIComponent(carpeta)}&generacion=${encodeURIComponent(generacion)}&turno=${encodeURIComponent(turno)}&accion=descargar`;
+    // Construir URL correcta según arquitectura: generación/[AÑO]/[TURNO]/Grupos/[CARPETA]/
+    const url = `descargar_pdf.php?` +
+        `archivo=${encodeURIComponent(archivo)}` +
+        `&anio=${encodeURIComponent(generacion)}` +  // generacion es realmente el año
+        `&turno=${encodeURIComponent(turno)}` +
+        `&carpeta=${encodeURIComponent(carpeta)}` +
+        `&accion=descargar`;
+    
+    window.location.href = url;
 }
 
 document.getElementById('modalPreviewPDF')
@@ -1118,6 +1231,157 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 });
+
+// ══════════════════════════════════════════════════════════════
+// FUNCIÓN PARA MOSTRAR GRÁFICA DE RESPALDOS
+// ══════════════════════════════════════════════════════════════
+
+let chartInstance = null; // Variable global para guardar la instancia del gráfico
+
+function mostrarGrafica() {
+    // Datos desde PHP
+    const anios = <?= json_encode($aniosGrafica) ?>;
+    const completas = <?= json_encode($completasGrafica) ?>;
+    const incompletas = <?= json_encode($incompletasGrafica) ?>;
+    
+    // Mostrar modal
+    const modal = new bootstrap.Modal(document.getElementById('modalGrafica'));
+    modal.show();
+    
+    // Esperar a que el modal se muestre completamente antes de crear el gráfico
+    document.getElementById('modalGrafica').addEventListener('shown.bs.modal', function () {
+        // Destruir gráfico anterior si existe
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+        
+        // Crear nuevo gráfico
+        const ctx = document.getElementById('respaldosChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: anios,
+                datasets: [
+                    {
+                        label: 'Boletas Completas (Finales)',
+                        data: completas,
+                        backgroundColor: 'rgba(40, 167, 69, 0.8)',
+                        borderColor: 'rgba(40, 167, 69, 1)',
+                        borderWidth: 2,
+                        borderRadius: 8
+                    },
+                    {
+                        label: 'Boletas Incompletas (Parciales)',
+                        data: incompletas,
+                        backgroundColor: 'rgba(255, 193, 7, 0.8)',
+                        borderColor: 'rgba(255, 193, 7, 1)',
+                        borderWidth: 2,
+                        borderRadius: 8
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            font: {
+                                size: 14,
+                                family: 'League Spartan',
+                                weight: '600'
+                            },
+                            padding: 20,
+                            usePointStyle: true,
+                            pointStyle: 'circle'
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Distribución de Respaldos por Año',
+                        font: {
+                            size: 18,
+                            family: 'League Spartan',
+                            weight: '700'
+                        },
+                        padding: 20,
+                        color: '#1a355e'
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(26, 53, 94, 0.95)',
+                        titleFont: {
+                            size: 14,
+                            family: 'League Spartan',
+                            weight: '600'
+                        },
+                        bodyFont: {
+                            size: 13,
+                            family: 'League Spartan'
+                        },
+                        padding: 12,
+                        cornerRadius: 8,
+                        displayColors: true,
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                label += context.parsed.y + ' boleta(s)';
+                                return label;
+                            },
+                            footer: function(tooltipItems) {
+                                let total = 0;
+                                tooltipItems.forEach(function(tooltipItem) {
+                                    total += tooltipItem.parsed.y;
+                                });
+                                return 'Total: ' + total + ' boletas';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1,
+                            font: {
+                                size: 12,
+                                family: 'League Spartan'
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)',
+                            drawBorder: false
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            font: {
+                                size: 12,
+                                family: 'League Spartan',
+                                weight: '600'
+                            }
+                        },
+                        grid: {
+                            display: false
+                        }
+                    }
+                },
+                animation: {
+                    duration: 1000,
+                    easing: 'easeInOutQuart'
+                },
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                }
+            }
+        });
+    }, { once: true }); // Solo ejecutar una vez por apertura de modal
+}
 </script>
 
 </body>

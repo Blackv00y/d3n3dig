@@ -24,12 +24,12 @@ if (!$id_escuela) {
 
 // ── Parámetros ──
 $archivo    = basename($_GET['archivo']    ?? '');  // nombre del PDF
-$carpeta    = basename($_GET['carpeta']    ?? '');  // ej. "Primero I"
-$generacion = basename($_GET['generacion'] ?? '');  // ej. "Generación 2025"
+$anio       = basename($_GET['anio']       ?? '');  // ej. "2024", "2025"
 $turno      = basename($_GET['turno']      ?? '');  // ej. "Matutino"
+$carpeta    = basename($_GET['carpeta']    ?? '');  // ej. "Primero I"
 $accion     = $_GET['accion'] ?? 'descargar';       // 'descargar' | 'visualizar'
 
-if (!$archivo || !$carpeta || !$generacion || !$turno) {
+if (!$archivo || !$anio || !$turno || !$carpeta) {
     http_response_code(400);
     die('Parámetros incompletos');
 }
@@ -41,9 +41,9 @@ if (strtolower(pathinfo($archivo, PATHINFO_EXTENSION)) !== 'pdf') {
 }
 
 // ── Construir y verificar ruta ──
-// Nueva estructura: respaldos/boletas/{ID}/{GENERACIÓN}/{TURNO}/grupos/{GRUPO}/
+// Nueva estructura: respaldos/boletas/{ID}/generación/{AÑO}/{TURNO}/Grupos/{CARPETA}/
 $rutaBase    = __DIR__ . '/respaldos/boletas/' . intval($id_escuela) . '/';
-$rutaArchivo = $rutaBase . $generacion . '/' . $turno . '/grupos/' . $carpeta . '/' . $archivo;
+$rutaArchivo = $rutaBase . 'generación/' . $anio . '/' . $turno . '/Grupos/' . $carpeta . '/' . $archivo;
 
 // realpath() resuelve .. y symlinks; verificamos que el resultado
 // siga dentro de la carpeta de la escuela (previene path traversal)
