@@ -1,6 +1,6 @@
 <?php
-// historial_respaldos.php — HISTORIAL DE RESPALDOS · SOLO NOMBRE DEL ALUMNO
-// Arquitectura: respaldos/boletas/{ID_ESCUELA}/{GENERACIÓN}/{TURNO}/grupos/{GRADO GRUPO}/
+// historial_respaldos.php — GESTIÓN DE HISTORIAL DE RESPALDOS (VERSIÓN CORREGIDA HEADER/FOOTER)
+// ESTRUCTURA: respaldos/boletas/{ID}/generación/{AÑO}/{TURNO}/Grupos/{GRADO GRUPO}/
 
 session_start();
 if (!isset($_SESSION['id_credencial'])) {
@@ -8,1381 +8,1025 @@ if (!isset($_SESSION['id_credencial'])) {
     exit();
 }
 
-include '../funciones/conexQRConejo.php';
+require_once __DIR__ . '/../funciones/conexQRConejo.php';
 
-// ============================================================
-// CONFIGURACIÓN INICIAL
-// ============================================================
-$id_usuario = $_SESSION['id_credencial'];
+$secretKey   = 'your-secret-key';
+$grado       = $_GET['grado'] ?? '';
+$grupo       = $_GET['grupo'] ?? '';
+$turno       = $_GET['turno'] ?? '';
+$anioFiltro  = $_GET['anio'] ?? '';
+$grupoFiltro = $_GET['grupo_filtro'] ?? '';
+$turnoFiltro = $_GET['turno_filtro'] ?? '';
 
-// Obtener id_escuela
+// ── Obtener ID de escuela del usuario ──
 $stmt = mysqli_prepare($conexion, "SELECT id_escuela FROM credenciales WHERE id_credencial = ?");
-mysqli_stmt_bind_param($stmt, "i", $id_usuario);
+mysqli_stmt_bind_param($stmt, "i", $_SESSION['id_credencial']);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
-$id_escuela = mysqli_fetch_assoc($result)['id_escuela'] ?? 0;
+$row = mysqli_fetch_assoc($result);
+$id_escuela = $row['id_escuela'] ?? 0;
 
-// Obtener nombre de la escuela
+// ── Obtener nombre de la escuela ──
 $stmt = mysqli_prepare($conexion, "SELECT nombre_escuela FROM escuelas WHERE id_escuela = ?");
 mysqli_stmt_bind_param($stmt, "i", $id_escuela);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
-$nombre_escuela = mysqli_fetch_assoc($result)['nombre_escuela'] ?? 'Escuela no identificada';
-
-// ============================================================
-// PARÁMETROS Y FILTROS
-// ============================================================
-$grado = $_GET['grado'] ?? '';
-$grupo = $_GET['grupo'] ?? '';
-$turno = $_GET['turno'] ?? '';
-$filtroGeneracion = $_GET['generacion'] ?? '';
-$filtroAnio = $_GET['anio'] ?? '';
-$filtroTurno = $_GET['turno'] ?? '';      // ← NUEVO: Filtro de turno
-$filtroGrado = $_GET['grado'] ?? '';      // ← NUEVO: Filtro de grado
-$filtroGrupo = $_GET['grupo'] ?? '';      // ← NUEVO: Filtro de grupo
+$row_escuela = mysqli_fetch_assoc($result);
+$nombre_escuela = $row_escuela['nombre_escuela'] ?? 'Consultar';
 
 // ============================================================
 // FUNCIONES AUXILIARES
 // ============================================================
 
-function convertirGrupoARomano($g) {
-    $m = [
-        'A'=>'I','B'=>'II','C'=>'III','D'=>'IV','E'=>'V','F'=>'VI',
-        'G'=>'VII','H'=>'VIII','I'=>'IX','J'=>'X','K'=>'XI','L'=>'XII',
-        'M'=>'XIII','N'=>'XIV','O'=>'XV','P'=>'XVI','Q'=>'XVII',
-        'R'=>'XVIII','S'=>'XIX','T'=>'XX'
+function convertirGrupoARomano($grupo) {
+    $grupo = strtoupper(trim($grupo));
+    $mapeo = [
+        'A' => 'I', 'B' => 'II', 'C' => 'III', 'D' => 'IV', 'E' => 'V', 'F' => 'VI',
+        'G' => 'VII', 'H' => 'VIII', 'I' => 'IX', 'J' => 'X', 'K' => 'XI', 'L' => 'XII',
+        'M' => 'XIII', 'N' => 'XIV', 'O' => 'XV', 'P' => 'XVI', 'Q' => 'XVII',
+        'R' => 'XVIII', 'S' => 'XIX', 'T' => 'XX',
     ];
-    $g = strtoupper(trim($g));
-    return $m[$g] ?? $g;
+    return isset($mapeo[$grupo]) ? $mapeo[$grupo] : $grupo;
 }
 
 function normalizarGrado($grado) {
-    $m = [
-        '1'=>'Primero','2'=>'Segundo','3'=>'Tercero','4'=>'Cuarto','5'=>'Quinto','6'=>'Sexto',
-        '1°'=>'Primero','2°'=>'Segundo','3°'=>'Tercero','4°'=>'Cuarto','5°'=>'Quinto','6°'=>'Sexto',
-        'primero'=>'Primero','segundo'=>'Segundo','tercero'=>'Tercero',
-        'cuarto'=>'Cuarto','quinto'=>'Quinto','sexto'=>'Sexto',
-        'PRIMERO'=>'Primero','SEGUNDO'=>'Segundo','TERCERO'=>'Tercero',
-        'CUARTO'=>'Cuarto','QUINTO'=>'Quinto','SEXTO'=>'Sexto',
-    ];
     $grado = trim($grado);
-    return $m[$grado] ?? ucfirst(strtolower($grado));
+    $mapeoGrados = [
+        '1' => 'Primero', '2' => 'Segundo', '3' => 'Tercero',
+        '4' => 'Cuarto', '5' => 'Quinto', '6' => 'Sexto',
+        '1°' => 'Primero', '2°' => 'Segundo', '3°' => 'Tercero',
+        '4°' => 'Cuarto', '5°' => 'Quinto', '6°' => 'Sexto',
+        'primero' => 'Primero', 'segundo' => 'Segundo', 'tercero' => 'Tercero',
+        'cuarto' => 'Cuarto', 'quinto' => 'Quinto', 'sexto' => 'Sexto',
+        'PRIMERO' => 'Primero', 'SEGUNDO' => 'Segundo', 'TERCERO' => 'Tercero',
+        'CUARTO' => 'Cuarto', 'QUINTO' => 'Quinto', 'SEXTO' => 'Sexto',
+    ];
+    return isset($mapeoGrados[$grado]) ? $mapeoGrados[$grado] : ucfirst(strtolower($grado));
 }
 
-function pesoGrado($nombre) {
-    $pesos = ['Primero'=>1,'Segundo'=>2,'Tercero'=>3,'Cuarto'=>4,'Quinto'=>5,'Sexto'=>6];
-    return $pesos[$nombre] ?? 99;
+// 🔧 FUNCIÓN CLAVE: Convertir ruta de archivo a URL web accesible
+function rutaArchivoAUrl($rutaArchivo, $baseDir) {
+    $webRoot = str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT']));
+    $rutaNormalizada = str_replace('\\', '/', $rutaArchivo);
+
+    if ($webRoot && strpos($rutaNormalizada, $webRoot) === 0) {
+        return str_replace($webRoot, '', $rutaNormalizada);
+    }
+
+    $baseDirNormalized = str_replace('\\', '/', $baseDir);
+    if (strpos($rutaNormalizada, $baseDirNormalized) === 0) {
+        return str_replace($baseDirNormalized, '/acceso_orientador', $rutaNormalizada);
+    }
+
+    return basename($rutaArchivo);
+}
+
+function decryptData($data, $key) {
+    if (empty($data)) return '';
+    $decoded = base64_decode($data, true);
+    if ($decoded === false) return '';
+    $parts = explode('::', $decoded, 2);
+    if (count($parts) !== 2) return '';
+    [$cipher, $iv] = $parts;
+    return openssl_decrypt($cipher, 'aes-256-cbc', $key, 0, base64_decode($iv));
 }
 
 // ============================================================
-// FUNCIÓN: OBTENER SOLO NOMBRE DEL ALUMNO (SIN DESENCRIPTAR)
+// CONSTRUIR RUTA CON NUEVA ESTRUCTURA
 // ============================================================
-$cacheNombres = []; // Cache global
 
-function obtenerNombreAlumno($id_alumno, $id_escuela, $conexion, &$cache) {
-    // Verificar cache primero
-    $cacheKey = "{$id_escuela}_{$id_alumno}";
-    if (isset($cache[$cacheKey])) {
-        return $cache[$cacheKey];
-    }
-    
-    // Consultar BD - SOLO nombre_credencial (ya está en texto plano)
-    $stmt = mysqli_prepare($conexion, 
-        "SELECT nombre_credencial FROM credenciales 
-         WHERE id_credencial = ? AND id_escuela = ?");
-    
-    if ($stmt) {
-        mysqli_stmt_bind_param($stmt, "ii", $id_alumno, $id_escuela);
-        mysqli_stmt_execute($stmt);
-        $result = mysqli_stmt_get_result($stmt);
-        
-        if ($row = mysqli_fetch_assoc($result)) {
-            $nombre = trim($row['nombre_credencial']);
-            $cache[$cacheKey] = $nombre;
-            mysqli_stmt_close($stmt);
-            return $nombre;
-        }
-        mysqli_stmt_close($stmt);
-    }
-    
-    // Fallback
-    $cache[$cacheKey] = "Alumno #$id_alumno";
-    return $cache[$cacheKey];
-}
+$rutaBaseRespaldos = __DIR__ . '/respaldos/boletas/';
+$gradoNormalizado  = normalizarGrado($grado);
+$grupoRomano       = convertirGrupoARomano($grupo);
+$turnoNormalizado  = ucfirst(strtolower(trim($turno)));
 
-// ══════════════════════════════════════════════════════════════════════
-// FUNCIONES NUEVAS: GENERACIONES DE 3 AÑOS (de VERSION_B)
-// Modelo de preparatoria en México: ciclos de 3 años
-// ══════════════════════════════════════════════════════════════════════
+$anioBusqueda   = !empty($anioFiltro) ? $anioFiltro : date('Y');
+$turnoBusqueda  = !empty($turnoFiltro) ? ucfirst(strtolower($turnoFiltro)) : $turnoNormalizado;
+$grupoBusqueda  = !empty($grupoFiltro) ? $grupoFiltro : $grupoRomano;
 
-/**
- * Calcula el rango de generación de 3 años al que pertenece un año
- * Ejemplo: 2024 → "2024 - 2027", 2025 → "2024 - 2027", 2026 → "2024 - 2027"
- */
-function calcularGeneracion($anio) {
-    $anio = (int)$anio;
-    $base = 2024;
-    $diferencia = $anio - $base;
-    $ciclo = floor($diferencia / 3);
-    $anioInicio = $base + ($ciclo * 3);
-    $anioFin = $anioInicio + 3;
-    
-    return "$anioInicio - $anioFin";
-}
+$rutaCompleta = $rutaBaseRespaldos
+    . $id_escuela . '/'
+    . 'generación/'
+    . $anioBusqueda . '/'
+    . $turnoBusqueda . '/'
+    . 'Grupos/'
+    . $gradoNormalizado . ' ' . $grupoBusqueda . '/';
 
-/**
- * Extrae el año de inicio de un string de generación
- * Ejemplo: "2024 - 2027" → 2024
- */
-function extraerAnioInicioGeneracion($generacion) {
-    if (preg_match('/^(\d{4})\s*-\s*\d{4}$/', $generacion, $matches)) {
-        return (int)$matches[1];
-    }
-    return 0;
-}
+// ── OBTENER ARCHIVOS PDF ──
+$archivos   = [];
+$idsAlumnos = [];
 
-/**
- * Extrae el año de fin de un string de generación
- * Ejemplo: "2024 - 2027" → 2027
- */
-function extraerAnioFinGeneracion($generacion) {
-    if (preg_match('/^\d{4}\s*-\s*(\d{4})$/', $generacion, $matches)) {
-        return (int)$matches[1];
-    }
-    return 0;
-}
+if (is_dir($rutaCompleta)) {
+    $scan = scandir($rutaCompleta);
+    foreach ($scan as $file) {
+        if ($file !== '.' && $file !== '..' && strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'pdf') {
+            $path = $rutaCompleta . $file;
 
-/**
- * Verifica si un año pertenece a una generación
- */
-function anioPerteneceAGeneracion($anio, $generacion) {
-    $inicio = extraerAnioInicioGeneracion($generacion);
-    $fin = extraerAnioFinGeneracion($generacion);
-    $anio = (int)$anio;
-    
-    return $anio >= $inicio && $anio < $fin;
-}
-
-// ============================================================
-// ESCANEAR CARPETAS CON NUEVA ESTRUCTURA
-// ============================================================
-$rutaBase = __DIR__ . '/respaldos/boletas/' . $id_escuela . '/generación/';
-$carpetas = [];
-$generacionesEncontradas = [];
-$aniosEncontrados = [];
-
-// ═══════════════════════════════════════════════════════════════════
-// NUEVAS ESTRUCTURAS PARA FILTROS DINÁMICOS (de VERSION_B)
-// ═══════════════════════════════════════════════════════════════════
-$filtrosData = [
-    'generaciones' => [],  // Rangos de 3 años (ej: "2024 - 2027")
-    'anios' => [],         // Años individuales encontrados
-    'turnos' => [],
-    'grados' => [],
-    'grupos' => [],
-];
-
-$mapeoGeneracionAnios = []; // Mapeo de generación → años disponibles
-
-// DEBUG: Mostrar ruta de exploración
-echo '<div style="background:#fff3cd; border:2px solid #ffc107; border-radius:8px; padding:12px; margin:15px 0; font-size:0.9rem;">';
-echo '🔍 <strong>Buscando en:</strong> ' . realpath($rutaBase ?: __DIR__) . '<br>';
-echo '📁 <strong>Ruta existe:</strong> ' . (is_dir($rutaBase) ? '✅ SÍ' : '❌ NO');
-echo '</div>';
-
-if (is_dir($rutaBase)) {
-    // NIVEL 1: Explorar AÑOS dentro de /generación/
-    $aniosDetectados = glob($rutaBase . '*', GLOB_ONLYDIR);
-    
-    foreach ($aniosDetectados as $rutaAnio) {
-        $nombreAnio = basename($rutaAnio);
-        $generacion = $nombreAnio; // Usar año como generación
-        
-        // ═══ CORRECCIÓN: Verificar si el año pertenece a la generación seleccionada ═══
-        // Si hay filtro de generación, verificar que el año esté dentro del rango
-        if (!empty($filtroGeneracion)) {
-            // El filtro viene como año inicial (ej: "2024" de "2024 - 2027")
-            // Calcular el rango completo y verificar si nombreAnio está dentro
-            $generacionRangoDelAnio = calcularGeneracion($nombreAnio);
-            $generacionRangoFiltrada = calcularGeneracion($filtroGeneracion);
-            
-            // Comparar rangos completos
-            if ($generacionRangoDelAnio !== $generacionRangoFiltrada) {
-                continue; // Saltar si no pertenece a la generación seleccionada
+            $idAlumno = '';
+            if (preg_match('/Boleta_(?:Final|Parcial|Manual)_(\d+)_/', $file, $matches)) {
+                $idAlumno = $matches[1];
+                if (!in_array($idAlumno, $idsAlumnos, true)) {
+                    $idsAlumnos[] = $idAlumno;
+                }
             }
-        }
-        // ═══ FIN CORRECCIÓN ═══
-        
-        // NIVEL 2: Explorar TURNOS
-        $turnos = glob($rutaAnio . '/*', GLOB_ONLYDIR);
-        
-        foreach ($turnos as $rutaTurnoCompleta) {
-            $turno = basename($rutaTurnoCompleta);
-            
-            // ═══ FILTRO DE TURNO ═══
-            if (!empty($filtroTurno) && $turno !== $filtroTurno) continue;
-            // ═══ FIN FILTRO TURNO ═══
-            
-            // NIVEL 3: Buscar "Grupos" o "grupos"
-            $rutaGrupos = $rutaTurnoCompleta . '/Grupos/';
-            if (!is_dir($rutaGrupos)) {
-                $rutaGrupos = $rutaTurnoCompleta . '/grupos/';
-            }
-            if (!is_dir($rutaGrupos)) continue;
-            
-            $gruposEnTurno = array_diff(scandir($rutaGrupos), ['.', '..']);
-            
-            foreach ($gruposEnTurno as $nombreCarpetaGrupo) {
-                $rutaCarpeta = $rutaGrupos . $nombreCarpetaGrupo . '/';
-                if (!is_dir($rutaCarpeta)) continue;
-                
-                $archivosEnCarpeta = [];
-                $aniosEnCarpeta = [];
-                $archivos = array_diff(scandir($rutaCarpeta), ['.', '..']);
-                
-                foreach ($archivos as $file) {
-                    if (pathinfo($file, PATHINFO_EXTENSION) !== 'pdf') continue;
-                    
-                    $rutaArchivo = $rutaCarpeta . $file;
-                    $idAlumno = '';
-                    $anio = '';
-                    
-                    // Extraer ID y año: Boleta_Tipo_ID_YYYY-MM-DD_HH-MM-SS.pdf
-                    if (preg_match('/Boleta_(?:Final|Parcial|Manual)_(\d+)_(\d{4})-\d{2}-\d{2}_/', $file, $matches)) {
-                        $idAlumno = $matches[1];
-                        $anio = $matches[2];
-                        if (!in_array($anio, $aniosEnCarpeta)) $aniosEnCarpeta[] = $anio;
-                        if (!in_array($anio, $aniosEncontrados)) $aniosEncontrados[] = $anio;
-                    }
-                    
-                    if (!empty($filtroAnio) && $anio !== $filtroAnio) continue;
-                    
-                    // ── OBTENER SOLO NOMBRE DEL ALUMNO (SIN APELLIDOS) ──
-                    $nombreAlumno = !empty($idAlumno) && is_numeric($idAlumno)
-                        ? obtenerNombreAlumno($idAlumno, $id_escuela, $conexion, $cacheNombres)
-                        : 'Desconocido';
-                    
-                    $archivosEnCarpeta[] = [
-                        'nombre_archivo' => $file,
-                        'nombre_alumno'  => $nombreAlumno,  // ← Solo nombre, sin apellidos
-                        'id_alumno'      => $idAlumno,
-                        'tamano'         => filesize($rutaArchivo),
-                        'fecha'          => filemtime($rutaArchivo),
-                        'tipo'           => str_contains($file, 'Boleta_Final_') ? 'Final' 
-                                       : (str_contains($file, 'Boleta_Parcial_') ? 'Parcial' : 'Otro'),
-                        'anio'           => $anio,
-                        'generacion'     => $generacion,
-                        'turno'          => $turno,
-                        'carpeta'        => $nombreCarpetaGrupo,
-                    ];
-                }
-                
-                if (empty($archivosEnCarpeta)) continue;
-                
-                usort($archivosEnCarpeta, fn($a,$b) => $b['fecha'] - $a['fecha']);
-                rsort($aniosEnCarpeta);
-                
-                $partes = explode(' ', $nombreCarpetaGrupo, 2);
-                $gradoCarpeta = normalizarGrado($partes[0] ?? $nombreCarpetaGrupo);
-                $grupoCarpeta = $partes[1] ?? '';
-                
-                // ═══ FILTROS DE GRADO Y GRUPO ═══
-                if (!empty($filtroGrado) && $gradoCarpeta !== normalizarGrado($filtroGrado)) continue;
-                if (!empty($filtroGrupo) && $grupoCarpeta !== $filtroGrupo) continue;
-                // ═══ FIN FILTROS GRADO Y GRUPO ═══
-                
-                $claveUnica = $generacion . '|' . $turno . '|' . $nombreCarpetaGrupo;
-                
-                if (!in_array($generacion, $generacionesEncontradas)) {
-                    $generacionesEncontradas[] = $generacion;
-                }
-                
-                // ═══ NUEVAS: Poblar datos de filtros (de VERSION_B) ═══
-                // Calcular generación de 3 años
-                $generacionRango = calcularGeneracion($nombreAnio);
-                
-                // Agregar a filtrosData
-                if (!in_array($generacionRango, $filtrosData['generaciones'])) {
-                    $filtrosData['generaciones'][] = $generacionRango;
-                }
-                if (!in_array($nombreAnio, $filtrosData['anios'])) {
-                    $filtrosData['anios'][] = $nombreAnio;
-                }
-                if (!in_array($turno, $filtrosData['turnos'])) {
-                    $filtrosData['turnos'][] = $turno;
-                }
-                if (!in_array($gradoCarpeta, $filtrosData['grados'])) {
-                    $filtrosData['grados'][] = $gradoCarpeta;
-                }
-                if (!in_array($grupoCarpeta, $filtrosData['grupos'])) {
-                    $filtrosData['grupos'][] = $grupoCarpeta;
-                }
-                
-                // Mapear generación → años
-                if (!isset($mapeoGeneracionAnios[$generacionRango])) {
-                    $mapeoGeneracionAnios[$generacionRango] = [];
-                }
-                if (!in_array($nombreAnio, $mapeoGeneracionAnios[$generacionRango])) {
-                    $mapeoGeneracionAnios[$generacionRango][] = $nombreAnio;
-                }
-                // ═══ FIN NUEVAS ═══
-                
-                $carpetas[$claveUnica] = [
-                    'label'        => $nombreCarpetaGrupo . ' (' . $turno . ' · ' . $generacion . ')',
-                    'grado_texto'  => $gradoCarpeta,
-                    'grupo_texto'  => $grupoCarpeta,
-                    'grado_peso'   => pesoGrado($gradoCarpeta),
-                    'generacion'   => $generacion,
-                    'turno'        => $turno,
-                    'archivos'     => $archivosEnCarpeta,
-                    'anios'        => $aniosEnCarpeta,
-                    'total'        => count($archivosEnCarpeta),
-                    'finales'      => count(array_filter($archivosEnCarpeta, fn($a) => $a['tipo'] === 'Final')),
-                    'parciales'    => count(array_filter($archivosEnCarpeta, fn($a) => $a['tipo'] === 'Parcial')),
-                ];
-            }
+
+            $archivos[] = [
+                'nombre'   => $file,
+                'ruta_fs'  => $path,
+                'ruta_web' => rutaArchivoAUrl($path, __DIR__),
+                'fecha'    => @filemtime($path) ?: time(),
+                'tipo'     => (strpos($file, 'Boleta_Final_') !== false) ? 'Final'
+                            : ((strpos($file, 'Boleta_Parcial_') !== false) ? 'Parcial' : 'Otro'),
+                'id_alumno'=> $idAlumno,
+                'existe'   => file_exists($path) && is_readable($path),
+            ];
         }
     }
+    usort($archivos, function ($a, $b) { return $b['fecha'] <=> $a['fecha']; });
 }
 
-uasort($carpetas, function($a, $b) {
-    if ($a['grado_peso'] !== $b['grado_peso']) {
-        return $a['grado_peso'] - $b['grado_peso'];
+// ── OBTENER NOMBRES DE ALUMNOS ──
+$nombresAlumnos = [];
+if (!empty($idsAlumnos)) {
+    $idsStr = implode(',', array_map('intval', $idsAlumnos));
+    $stmt = mysqli_prepare($conexion, "
+        SELECT id_credencial, nombre_credencial, apellidos_credencial
+        FROM credenciales
+        WHERE id_credencial IN ($idsStr)
+    ");
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+
+    while ($row = mysqli_fetch_assoc($result)) {
+        $apellidos = decryptData($row['apellidos_credencial'], $secretKey);
+        $nombresAlumnos[$row['id_credencial']] = trim($row['nombre_credencial'] . ' ' . $apellidos);
     }
-    return strcmp($a['grupo_texto'], $b['grupo_texto']);
-});
-
-rsort($generacionesEncontradas);
-rsort($aniosEncontrados);
-
-// ═══ NUEVAS: Ordenar datos de filtros (de VERSION_B) ═══
-sort($filtrosData['generaciones']);
-sort($filtrosData['anios']);
-sort($filtrosData['turnos']);
-usort($filtrosData['grados'], fn($a, $b) => pesoGrado($a) - pesoGrado($b));
-sort($filtrosData['grupos']);
-
-foreach ($mapeoGeneracionAnios as &$anios) {
-    sort($anios);
 }
-// ═══ FIN NUEVAS ═══
 
-$totalCarpetas        = count($carpetas);
-$totalArchivosGlobal  = array_sum(array_column($carpetas, 'total'));
-$totalFinalesGlobal   = array_sum(array_column($carpetas, 'finales'));
-$totalParcialesGlobal = array_sum(array_column($carpetas, 'parciales'));
+// ============================================================
+// 🔹 DATOS PARA GRÁFICA CIRCULAR: MATERIA MÁS APROBADA
+// ============================================================
+$datosGraficaMateria = [];
+$materiasStats = [];
 
-// ═══════════════════════════════════════════════════════════════════
-// DATOS PARA GRÁFICA: Histórico de respaldos por año y tipo
-// ═══════════════════════════════════════════════════════════════════
-$datosGrafica = [];
-foreach ($carpetas as $carpeta) {
-    $anio = $carpeta['generacion'];
-    
-    if (!isset($datosGrafica[$anio])) {
-        $datosGrafica[$anio] = [
-            'completas' => 0,    // Finales
-            'incompletas' => 0   // Parciales + Manual
+if (!empty($idsAlumnos)) {
+    $idsStr = implode(',', array_map('intval', $idsAlumnos));
+
+    $stmt = mysqli_prepare($conexion, "
+        SELECT m.nombre_materia, c.primer_parcial, c.segundo_parcial, c.tercer_parcial
+        FROM calificaciones c
+        JOIN materias m ON c.id_materia = m.id_materia
+        WHERE c.id_alumno IN ($idsStr)
+          AND c.grado_credencial = ?
+          AND c.grupo_credencial = ?
+          AND c.turno_credencial = ?
+    ");
+    mysqli_stmt_bind_param($stmt, "sss", $grado, $grupo, $turno);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+
+    while ($row = mysqli_fetch_assoc($result)) {
+        $materia = $row['nombre_materia'];
+        $p1 = $row['primer_parcial'];
+        $p2 = $row['segundo_parcial'];
+        $p3 = $row['tercer_parcial'];
+
+        if (is_numeric($p1) && is_numeric($p2) && is_numeric($p3)) {
+            $promedio = ($p1 + $p2 + $p3) / 3;
+            $promedioRedondeado = (($promedio - floor($promedio)) >= 0.6) ? ceil($promedio) : floor($promedio);
+
+            if (!isset($materiasStats[$materia])) {
+                $materiasStats[$materia] = ['aprobados' => 0, 'reprobados' => 0];
+            }
+            if ($promedioRedondeado >= 7) $materiasStats[$materia]['aprobados']++;
+            else $materiasStats[$materia]['reprobados']++;
+        }
+    }
+
+    // Materia más aprobada
+    $materiaMasAprobada = '';
+    $maxAprobados = 0;
+    foreach ($materiasStats as $materia => $stats) {
+        if ($stats['aprobados'] > $maxAprobados) {
+            $maxAprobados = $stats['aprobados'];
+            $materiaMasAprobada = $materia;
+        }
+    }
+
+    if ($materiaMasAprobada && isset($materiasStats[$materiaMasAprobada])) {
+        $stats = $materiasStats[$materiaMasAprobada];
+        $datosGraficaMateria = [
+            'materia'   => $materiaMasAprobada,
+            'aprobados' => $stats['aprobados'],
+            'reprobados'=> $stats['reprobados'],
+            'total'     => $stats['aprobados'] + $stats['reprobados'],
         ];
     }
-    
-    $datosGrafica[$anio]['completas'] += $carpeta['finales'];
-    $datosGrafica[$anio]['incompletas'] += $carpeta['parciales'];
 }
 
-// Ordenar por año
-ksort($datosGrafica);
+// ── ESTADÍSTICAS GENERALES ──
+$totalArchivos   = count($archivos);
+$boletasFinales  = count(array_filter($archivos, fn($a) => $a['tipo'] === 'Final'));
+$boletasParciales= count(array_filter($archivos, fn($a) => $a['tipo'] === 'Parcial'));
 
-// Convertir a arrays para Chart.js
-$aniosGrafica = array_keys($datosGrafica);
-$completasGrafica = array_column($datosGrafica, 'completas');
-$incompletasGrafica = array_column($datosGrafica, 'incompletas');
-
-// ── CERRAR CONEXIÓN ──
 mysqli_close($conexion);
+
+// ============================================================
+// ✅ HEADER (SOLO 1 VEZ) — NO DUPLICAR HTML/HEAD/BODY
+// ============================================================
+require_once __DIR__ . '/header_orientador.php';
 ?>
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Historial de Respaldos</title>
-    
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    
-    <style>
-        body {
-            font-family: 'League Spartan', sans-serif;
-            background: #f0f4ff;
-            padding: 24px 20px;
-            min-height: 100vh;
-        }
-        .container { max-width: 1200px; }
 
-        .page-title {
-            text-align: center;
-            color: #1a355e;
-            font-size: 1.9rem;
-            font-weight: 700;
-            margin: 10px 0 24px;
-        }
-        .page-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: white;
-            border-radius: 16px;
-            padding: 18px 24px;
-            margin-bottom: 24px;
-            box-shadow: 0 2px 12px rgba(26,53,94,.08);
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        .school-info { line-height: 1.7; color: #444; }
-        .school-info strong { color: #1a355e; font-size: 1.05rem; }
+<!-- (Opcional) Cargas extra SOLO para esta página -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.4/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-        .btn-back {
-            background: linear-gradient(135deg, #6c757d, #495057);
-            border: none;
-            color: white;
-            font-weight: 600;
-            padding: 9px 22px;
-            border-radius: 50px;
-            text-decoration: none;
-            font-size: .88rem;
-            transition: all .25s;
-            white-space: nowrap;
-        }
-        .btn-back:hover {
-            background: linear-gradient(135deg,#5a6268,#343a40);
-            color: white;
-            transform: translateY(-1px);
-            text-decoration: none;
-        }
-
-        .stats-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(170px,1fr));
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-        .stat-card {
-            background: white;
-            border-radius: 14px;
-            padding: 18px 16px;
-            text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,.07);
-            border-top: 4px solid #2b91ff;
-        }
-        .stat-card.st-grupos  { border-top-color: #6f42c1; }
-        .stat-card.st-final   { border-top-color: #28a745; }
-        .stat-card.st-parcial { border-top-color: #ffc107; }
-        .stat-card.st-grafica { 
-            border-top-color: #ff6b6b; 
-            cursor: pointer;
-            transition: all .3s;
-        }
-        .stat-card.st-grafica:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 20px rgba(255,107,107,.3);
-        }
-        .stat-number { font-size: 2.2rem; font-weight: 700; color: #1a355e; line-height: 1; }
-        .stat-label  { color: #6c757d; font-size: .82rem; margin-top: 6px; }
-        
-        /* Modal de gráfica */
-        .modal-grafica .modal-content {
-            border-radius: 16px;
-            border: none;
-        }
-        .modal-grafica .modal-header {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            border-radius: 16px 16px 0 0;
-        }
-        .modal-grafica .modal-body {
-            padding: 30px;
-        }
-        #chartContainer {
-            position: relative;
-            height: 400px;
-        }
-
-        .filters-wrap {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 22px;
-            align-items: flex-end;
-        }
-        .filter-group { flex: 1; min-width: 180px; }
-        .filter-group label {
-            font-size: .8rem; font-weight: 600; color: #495057; margin-bottom: 5px; display: block;
-        }
-        .filter-select {
-            width: 100%;
-            border: 2px solid #dee2e6;
-            border-radius: 10px;
-            padding: 8px 14px;
-            font-size: .9rem;
-            background: white;
-            cursor: pointer;
-            transition: border-color .25s, box-shadow .25s;
-        }
-        .filter-select:focus {
-            border-color: #2b91ff;
-            box-shadow: 0 0 0 3px rgba(43,145,255,.15);
-            outline: none;
-        }
-        .btn-clear-filters {
-            background: #e9ecef; border: none; color: #495057;
-            padding: 8px 16px; border-radius: 10px; font-size: .85rem;
-            cursor: pointer; transition: all .2s; white-space: nowrap;
-        }
-        .btn-clear-filters:hover { background: #dee2e6; color: #333; }
-
-        .search-wrap { position: relative; margin-bottom: 22px; }
-        .search-wrap .form-control {
-            border: 2px solid #dee2e6;
-            border-radius: 50px;
-            padding: 10px 44px 10px 20px;
-            font-size: .9rem;
-            font-family: 'League Spartan', sans-serif;
-            transition: border-color .25s, box-shadow .25s;
-        }
-        .search-wrap .form-control:focus {
-            border-color: #2b91ff;
-            box-shadow: 0 0 0 3px rgba(43,145,255,.15);
-            outline: none;
-        }
-        .search-wrap .search-ico {
-            position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
-            color: #adb5bd; pointer-events: none;
-        }
-
-        .folders-list { display: flex; flex-direction: column; gap: 12px; }
-        .folder-card {
-            background: white; border-radius: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.07);
-            overflow: hidden; transition: box-shadow .25s;
-        }
-        .folder-card:hover { box-shadow: 0 4px 22px rgba(43,145,255,.15); }
-
-        .folder-hdr {
-            display: flex; align-items: center; gap: 14px; padding: 15px 20px;
-            cursor: pointer; user-select: none; border: none; background: transparent;
-            width: 100%; text-align: left; transition: background .2s;
-        }
-        .folder-hdr:hover { background: #f8f9ff; }
-        .folder-hdr.is-open { background: #f0f4ff; border-bottom: 1px solid #dce8ff; }
-
-        .folder-ico {
-            width: 46px; height: 46px; border-radius: 12px;
-            background: linear-gradient(135deg, #2b91ff, #0f6fff);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 1.25rem; color: white; flex-shrink: 0;
-            box-shadow: 0 3px 10px rgba(43,145,255,.35);
-            transition: transform .2s;
-        }
-        .folder-hdr.is-open .folder-ico { transform: scale(1.07); }
-
-        .folder-label { flex: 1; }
-        .folder-name { font-size: 1rem; font-weight: 700; color: #1a355e; margin-bottom: 3px; }
-        .folder-years { font-size: .78rem; color: #6c757d; }
-
-        .folder-badges { display: flex; gap: 7px; align-items: center; flex-shrink: 0; }
-        .fbadge { font-size: .74rem; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
-        .fbadge-total   { background: #e8f0ff; color: #2b91ff; }
-        .fbadge-final   { background: linear-gradient(135deg,#28a745,#20c997); color: white; }
-        .fbadge-parcial { background: linear-gradient(135deg,#ffc107,#ff9800); color: #333; }
-
-        .folder-chevron { color: #adb5bd; font-size: .85rem; flex-shrink: 0; transition: transform .3s; }
-        .folder-hdr.is-open .folder-chevron { transform: rotate(180deg); color: #2b91ff; }
-
-        .folder-body { display: none; }
-        .folder-body.is-open { display: block; }
-
-        .inner-table { width: 100%; border-collapse: collapse; }
-        .inner-table thead { background: linear-gradient(135deg,#1a355e,#2b91ff); }
-        .inner-table thead th {
-            color: white; font-size: .78rem; font-weight: 600;
-            padding: 9px 14px; letter-spacing: .04em; text-transform: uppercase;
-        }
-        .inner-table tbody tr { border-bottom: 1px solid #f0f4ff; transition: background .15s; }
-        .inner-table tbody tr:last-child { border-bottom: none; }
-        .inner-table tbody tr:hover { background: #f8faff; }
-        .inner-table tbody td { padding: 10px 14px; font-size: .87rem; color: #333; vertical-align: middle; }
-
-        .fname-cell { display: flex; align-items: center; gap: 10px; }
-        .pdf-dot {
-            width: 32px; height: 32px; border-radius: 8px; background: #fff0f0; flex-shrink: 0;
-            display: flex; align-items: center; justify-content: center;
-            color: #dc3545; font-size: .95rem;
-        }
-        .fname-text { 
-            font-weight: 600; color: #1a355e; font-size: .9rem; 
-            word-break: break-all;
-        }
-        .fname-subtext { 
-            font-size: .75rem; color: #6c757d; 
-            display: block; margin-top: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 400px;
-        }
-
-        .tbadge { font-size: .73rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
-        .tbadge-final   { background: linear-gradient(135deg,#28a745,#20c997); color: white; }
-        .tbadge-parcial { background: linear-gradient(135deg,#ffc107,#ff9800); color: #333; }
-        .tbadge-otro    { background: #e9ecef; color: #555; }
-
-        .badge-gen {
-            background: #f0e6ff; color: #6f42c1; font-size: .75rem; font-weight: 600;
-            padding: 3px 9px; border-radius: 12px; white-space: nowrap;
-        }
-
-        .fecha-pill {
-            background: #f0f4ff; padding: 3px 10px; border-radius: 20px;
-            font-size: .76rem; color: #495057; white-space: nowrap;
-        }
-
-        .act-btn {
-            padding: 5px 12px; border-radius: 8px; border: none;
-            font-size: .82rem; cursor: pointer; transition: all .2s;
-            margin: 0 2px;
-        }
-        .act-btn-view { background: #2b91ff; color: white; }
-        .act-btn-view:hover { background: #1a78e6; transform: translateY(-1px); }
-        .act-btn-dl   { background: #28a745; color: white; }
-        .act-btn-dl:hover { background: #218838; transform: translateY(-1px); }
-
-        .empty-global {
-            text-align: center; padding: 70px 20px; color: #6c757d;
-            background: white; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.07);
-        }
-        .empty-global .ei { font-size: 4rem; color: #dee2e6; margin-bottom: 18px; }
-        .folder-empty { padding: 26px; text-align: center; color: #adb5bd; font-size: .88rem; }
-
-        @media (max-width: 576px) {
-            .col-kb { display: none; }
-            .filters-wrap { flex-direction: column; }
-            .filter-group { min-width: 100%; }
-            .page-header { flex-direction: column; text-align: center; }
-        }
-    </style>
-</head>
-<body>
-
-<div class="container">
-    <?php 
-    $headerPath = __DIR__ . '/header_orientador.php';
-    if (file_exists($headerPath)) {
-        include $headerPath;
-    } else {
-        echo '<nav class="navbar navbar-light bg-white rounded shadow-sm mb-4 px-3">
-                <a class="navbar-brand fw-bold text-primary" href="#"><i class="fas fa-school me-2"></i>Sistema Escolar</a>
-              </nav>';
+<style>
+    :root {
+        --primary: #1a355e;
+        --secondary: #2b91ff;
+        --success: #28a745;
+        --warning: #ffc107;
+        --danger: #dc3545;
+        --light: #f8f9fa;
     }
-    ?>
-    
-    <br>
 
-    <div class="page-title">
+    body {
+        font-family: 'League Spartan', sans-serif;
+        background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+    }
+
+    /* ✅ En vez de padding en body (porque el header ya maneja top) */
+    .page-wrap{
+        padding: 20px;
+        min-height: calc(100vh - 80px);
+    }
+
+    .container { max-width: 1400px; }
+
+    .header-title {
+        text-align: center;
+        margin: 2rem 0 2.5rem;
+        color: var(--primary);
+        font-size: 2rem;
+        font-weight: 700;
+        position: relative;
+        padding-bottom: 15px;
+    }
+    .header-title::after {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 50%;
+        transform: translateX(-50%);
+        width: 80px; height: 4px;
+        background: linear-gradient(90deg, var(--secondary), var(--success));
+        border-radius: 2px;
+    }
+
+    .info-header-wrapper {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 25px;
+        padding: 18px 24px;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        border-left: 4px solid var(--secondary);
+    }
+
+    .btn-back {
+        background: linear-gradient(135deg, #6c757d, #495057);
+        border: none;
+        color: white;
+        font-weight: 600;
+        padding: 10px 24px;
+        border-radius: 30px;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+    }
+    .btn-back:hover {
+        background: linear-gradient(135deg, #5a6268, #343a40);
+        transform: translateY(-2px);
+    }
+
+    .stats-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 25px;
+    }
+    .stat-card {
+        background: white;
+        border-radius: 16px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+        border-top: 4px solid var(--secondary);
+    }
+    .stat-card.final { border-top-color: var(--success); }
+    .stat-card.parcial { border-top-color: var(--warning); }
+    .stat-card.danger { border-top-color: var(--danger); }
+
+    .stat-number {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: var(--primary);
+        line-height: 1;
+        margin-bottom: 4px;
+    }
+    .stat-label {
+        color: #6c757d;
+        font-size: 0.85rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+    }
+
+    .backup-table {
+        background: white;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        margin-bottom: 25px;
+    }
+    .table { margin-bottom: 0; }
+    .table thead {
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        color: white;
+        font-weight: 600;
+    }
+    .table thead th {
+        border: none;
+        padding: 14px 16px;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .table tbody tr {
+        transition: background 0.2s;
+        border-bottom: 1px solid #f1f3f5;
+    }
+    .table tbody tr:hover {
+        background: linear-gradient(90deg, #f8f9ff, #f0f7ff);
+    }
+    .table tbody td {
+        padding: 14px 16px;
+        vertical-align: middle;
+        font-size: 0.95rem;
+    }
+
+    .badge-tipo {
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .badge-final { background: linear-gradient(135deg, var(--success), #20c997); color: white; }
+    .badge-parcial { background: linear-gradient(135deg, var(--warning), #ff9800); color: #333; }
+    .badge-otro { background: linear-gradient(135deg, #6c757d, #adb5bd); color: white; }
+
+    .btn-action {
+        padding: 8px 14px;
+        border-radius: 10px;
+        margin: 0 3px;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        font-size: 0.9rem;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    .btn-view { background: linear-gradient(135deg, var(--secondary), #1a78e6); color: white; border: none; }
+    .btn-view:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(43,145,255,0.4); }
+    .btn-download { background: linear-gradient(135deg, var(--success), #218838); color: white; border: none; }
+    .btn-download:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(40,167,69,0.4); }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 30px;
+        color: #6c757d;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    }
+    .empty-state i { font-size: 4.5rem; margin-bottom: 20px; color: #dee2e6; }
+
+    .search-box { max-width: 450px; margin-bottom: 20px; position: relative; }
+    .search-box .form-control {
+        padding-left: 45px;
+        border-radius: 30px;
+        border: 2px solid #e9ecef;
+    }
+    .search-box .form-control:focus {
+        border-color: var(--secondary);
+        box-shadow: 0 0 0 4px rgba(43,145,255,0.15);
+    }
+    .search-box i {
+        position: absolute;
+        left: 18px; top: 50%;
+        transform: translateY(-50%);
+        color: #adb5bd;
+    }
+
+    .filters-row {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+        align-items: flex-end;
+        background: white;
+        padding: 16px 20px;
+        border-radius: 16px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    }
+    .filter-group { flex: 1; min-width: 180px; }
+    .filter-group label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #495057;
+        margin-bottom: 6px;
+        display: block;
+    }
+    .filter-select {
+        width: 100%;
+        border: 2px solid #dee2e6;
+        border-radius: 12px;
+        padding: 10px 16px;
+        font-size: 0.9rem;
+        background: white;
+    }
+
+    .btn-stats {
+        background: linear-gradient(135deg, #6f42c1, #a66efa);
+        border: none;
+        color: white;
+        font-weight: 600;
+        padding: 10px 24px;
+        border-radius: 30px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .badge-grupo {
+        background: linear-gradient(135deg, #6f42c1, #a66efa);
+        color: white;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .badge-turno {
+        background: linear-gradient(135deg, #17a2b8, #20c997);
+        color: white;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin: 20px 0;
+        background: white;
+        border-radius: 16px;
+        padding: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .fecha-badge {
+        background: #e9ecef;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        color: #495057;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .modal-content { border-radius: 20px; border: none; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+    .modal-header { border-radius: 20px 20px 0 0; border: none; padding: 18px 24px; }
+    .pdf-preview-container { background: #1a1a2e; border-radius: 12px; overflow: hidden; height: 500px; display: flex; align-items: center; justify-content: center; }
+    .pdf-preview-container iframe { width: 100%; height: 100%; border: none; background: white; }
+    .pdf-fallback { color: white; text-align: center; padding: 20px; }
+    .pdf-fallback a { color: var(--secondary); font-weight: 600; }
+
+    @media (max-width: 768px) {
+        .info-header-wrapper { flex-direction: column; gap: 15px; text-align: center; }
+        .filters-row { flex-direction: column; }
+        .filter-group { width: 100%; }
+        .table-responsive { font-size: 0.85rem; }
+        .btn-action { width: 32px; height: 32px; }
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.4s ease forwards; }
+</style>
+<br>
+<div class="page-wrap">
+<div class="container">
+
+    <div class="header-title">
         <i class="fas fa-history me-2"></i>Historial de Respaldos
     </div>
 
-    <div class="page-header">
-        <div class="school-info">
-            <strong><?= htmlspecialchars($nombre_escuela) ?></strong><br>
-            <span style="font-size:.88rem; color:#666;">
-                <?php if ($grado && $grupo && $turno): ?>
-                    Grado <?= htmlspecialchars($grado) ?> &nbsp;·&nbsp;
-                    Grupo <?= htmlspecialchars(convertirGrupoARomano($grupo)) ?> &nbsp;·&nbsp;
-                    Turno <?= htmlspecialchars($turno) ?>
-                <?php else: ?>
-                    <i class="fas fa-globe me-1"></i>Todos los grupos
-                <?php endif; ?>
-            </span>
+    <!-- INFO + BOTÓN VOLVER -->
+    <div class="info-header-wrapper fade-in">
+        <div>
+            <strong><i class="fas fa-school me-1"></i>Escuela:</strong> <?= htmlspecialchars($nombre_escuela) ?><br>
+            <strong>Grado:</strong> <?= htmlspecialchars($grado) ?> |
+            <strong>Grupo:</strong> <?= htmlspecialchars($grupoRomano) ?> |
+            <strong>Turno:</strong> <?= htmlspecialchars($turno) ?> |
+            <strong>Año:</strong> <?= htmlspecialchars($anioBusqueda) ?>
         </div>
-        <?php if ($grado && $grupo && $turno): ?>
-        <a href="boleta_alumnos_nueva.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
-           class="btn-back">
-            <i class="fas fa-arrow-left me-2"></i>Volver a Boletas
-        </a>
-        <?php endif; ?>
-    </div>
-
-    <div class="stats-row">
-        <div class="stat-card st-grupos">
-            <div class="stat-number"><?= $totalCarpetas ?></div>
-            <div class="stat-label"><i class="fas fa-folder me-1"></i>Grupos</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-number"><?= $totalArchivosGlobal ?></div>
-            <div class="stat-label"><i class="fas fa-file-pdf me-1"></i>Archivos</div>
-        </div>
-        <div class="stat-card st-final">
-            <div class="stat-number"><?= $totalFinalesGlobal ?></div>
-            <div class="stat-label"><i class="fas fa-check-circle me-1"></i>Finales</div>
-        </div>
-        <div class="stat-card st-parcial">
-            <div class="stat-number"><?= $totalParcialesGlobal ?></div>
-            <div class="stat-label"><i class="fas fa-clock me-1"></i>Parciales</div>
-        </div>
-        
-        <!-- ═══ NUEVA TARJETA INTERACTIVA CON GRÁFICA ═══ -->
-        <div class="stat-card st-grafica" onclick="mostrarGrafica()" title="Haz clic para ver la gráfica de respaldos">
-            <div class="stat-number"><i class="fas fa-chart-bar"></i></div>
-            <div class="stat-label"><i class="fas fa-chart-line me-1"></i>Ver Gráfica</div>
+        <div>
+            <a href="boleta_alumnos_nueva.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
+               class="btn-back">
+                <i class="fas fa-arrow-left"></i> Volver
+            </a>
         </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════
-         MODAL DE GRÁFICA
-    ═══════════════════════════════════════════════════════ -->
-    <div class="modal fade modal-grafica" id="modalGrafica" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="fas fa-chart-bar me-2"></i>Histórico de Respaldos
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="chartContainer">
-                        <canvas id="respaldosChart"></canvas>
-                    </div>
-                    <div class="mt-3 text-center text-muted small">
-                        <i class="fas fa-info-circle me-1"></i>
-                        Gráfica generada con los respaldos encontrados en el sistema
-                    </div>
-                </div>
-            </div>
+    <!-- TARJETAS DE ESTADÍSTICAS -->
+    <div class="stats-cards">
+        <div class="stat-card fade-in">
+            <div class="stat-number"><?= $totalArchivos ?></div>
+            <div class="stat-label"><i class="fas fa-file-pdf"></i> Total</div>
+        </div>
+        <div class="stat-card final fade-in">
+            <div class="stat-number"><?= $boletasFinales ?></div>
+            <div class="stat-label"><i class="fas fa-check-circle"></i> Finales</div>
+        </div>
+        <div class="stat-card parcial fade-in">
+            <div class="stat-number"><?= $boletasParciales ?></div>
+            <div class="stat-label"><i class="fas fa-clock"></i> Parciales</div>
+        </div>
+        <div class="stat-card danger fade-in">
+            <div class="stat-number"><?= count($idsAlumnos) ?></div>
+            <div class="stat-label"><i class="fas fa-users"></i> Alumnos</div>
         </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════
-         SECCIÓN DE FILTROS MULTICRITERIO (NUEVA - de VERSION_B)
-    ═══════════════════════════════════════════════════════ -->
-    <div class="filters-wrap">
-        <!-- Filtro: Generación (Rangos de 3 años) -->
+    <!-- FILTROS -->
+    <div class="filters-row fade-in">
         <div class="filter-group">
-            <label><i class="fas fa-graduation-cap me-1"></i>Generación (3 años):</label>
-            <select id="filtroGeneracionRango" class="filter-select">
-                <option value="">Todas las generaciones</option>
-                <?php foreach ($filtrosData['generaciones'] as $genRango): ?>
-                <option value="<?= htmlspecialchars($genRango) ?>" 
-                        <?= $filtroGeneracion && anioPerteneceAGeneracion($filtroGeneracion, $genRango) ? 'selected' : '' ?>>
-                    <?= htmlspecialchars($genRango) ?>
-                </option>
+            <label><i class="fas fa-calendar me-1"></i>Año</label>
+            <select class="filter-select" onchange="aplicarFiltro('anio', this.value)">
+                <option value="">Todos</option>
+                <?php for($y = date('Y'); $y >= 2020; $y--): ?>
+                <option value="<?= $y ?>" <?= $anioFiltro == $y ? 'selected' : '' ?>><?= $y ?></option>
+                <?php endfor; ?>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label><i class="fas fa-users me-1"></i>Grupo</label>
+            <select class="filter-select" onchange="aplicarFiltro('grupo_filtro', this.value)">
+                <option value="">Todos</option>
+                <?php foreach(['I','II','III','IV','V','VI','VII','VIII'] as $g): ?>
+                <option value="<?= $g ?>" <?= $grupoFiltro == $g ? 'selected' : '' ?>><?= $g ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
-
-        <!-- Filtro: Año Específico (dentro de la generación) -->
         <div class="filter-group">
-            <label><i class="fas fa-calendar-alt me-1"></i>Año Específico:</label>
-            <select id="filtroAnioEspecifico" class="filter-select">
-                <option value="">Todos los años</option>
-                <?php foreach ($filtrosData['anios'] as $anio): ?>
-                <option value="<?= htmlspecialchars($anio) ?>" <?= $filtroAnio === $anio ? 'selected' : '' ?>>
-                    <?= htmlspecialchars($anio) ?>
-                </option>
-                <?php endforeach; ?>
+            <label><i class="fas fa-sun me-1"></i>Turno</label>
+            <select class="filter-select" onchange="aplicarFiltro('turno_filtro', this.value)">
+                <option value="">Todos</option>
+                <option value="Matutino" <?= $turnoFiltro == 'Matutino' ? 'selected' : '' ?>>Matutino</option>
+                <option value="Vespertino" <?= $turnoFiltro == 'Vespertino' ? 'selected' : '' ?>>Vespertino</option>
             </select>
         </div>
-        
-        <!-- Filtro: Turno -->
-        <div class="filter-group">
-            <label><i class="fas fa-sun me-1"></i>Turno:</label>
-            <select id="filtroTurno" class="filter-select">
-                <option value="">Todos los turnos</option>
-                <?php foreach ($filtrosData['turnos'] as $t): ?>
-                <option value="<?= htmlspecialchars($t) ?>">
-                    <?= htmlspecialchars($t) ?>
-                </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        
-        <!-- Filtro: Grado -->
-        <div class="filter-group">
-            <label><i class="fas fa-layer-group me-1"></i>Grado:</label>
-            <select id="filtroGrado" class="filter-select">
-                <option value="">Todos los grados</option>
-                <?php foreach ($filtrosData['grados'] as $g): ?>
-                <option value="<?= htmlspecialchars($g) ?>">
-                    <?= htmlspecialchars($g) ?>
-                </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        
-        <!-- Filtro: Grupo -->
-        <div class="filter-group">
-            <label><i class="fas fa-users me-1"></i>Grupo:</label>
-            <select id="filtroGrupo" class="filter-select">
-                <option value="">Todos los grupos</option>
-                <?php foreach ($filtrosData['grupos'] as $gr): ?>
-                <option value="<?= htmlspecialchars($gr) ?>">
-                    <?= htmlspecialchars($gr) ?>
-                </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-
-        <!-- Botones -->
-        <div style="align-self: flex-end; display: flex; gap: 8px;">
-            <button class="btn-clear-filters" onclick="aplicarFiltrosMultiples()">
-                <i class="fas fa-filter me-1"></i>Filtrar
-            </button>
-            <button class="btn-clear-filters" onclick="limpiarFiltros()">
+        <div style="align-self: flex-end;">
+            <button class="btn btn-outline-secondary" onclick="limpiarFiltros()">
                 <i class="fas fa-times me-1"></i>Limpiar
             </button>
         </div>
     </div>
 
-    <div class="search-wrap">
-        <input type="text" id="searchInput" class="form-control"
-               placeholder="🔍 Buscar por nombre de alumno o archivo..."
-               oninput="filtrarArchivos(this.value)">
-        <i class="fas fa-search search-ico"></i>
+    <!-- BOTÓN DE ESTADÍSTICAS -->
+    <div class="mb-3 fade-in">
+        <button class="btn btn-stats" onclick="abrirModalGrafica()">
+            <i class="fas fa-chart-pie"></i> Ver <?= htmlspecialchars($datosGraficaMateria['materia'] ?? 'Analítica') ?>
+        </button>
     </div>
 
-    <?php if ($totalCarpetas > 0): ?>
-    <div class="folders-list" id="foldersContainer">
-        <?php foreach ($carpetas as $clave => $carpeta):
-            $uid = 'fc-' . md5($clave);
-        ?>
-        <div class="folder-card" data-folder="<?= htmlspecialchars(strtolower($clave)) ?>">
+    <!-- BÚSQUEDA -->
+    <div class="search-box fade-in">
+        <i class="fas fa-search"></i>
+        <input type="text" id="searchInput" class="form-control form-control-lg"
+               placeholder="Buscar por alumno, archivo o ID..."
+               onkeyup="filtrarTabla()">
+    </div>
 
-            <button class="folder-hdr" onclick="toggleFolder(this, '<?= $uid ?>')">
-                <div class="folder-ico"><i class="fas fa-folder-open"></i></div>
-                <div class="folder-label">
-                    <div class="folder-name"><?= htmlspecialchars($carpeta['label']) ?></div>
-                    <?php if (!empty($carpeta['anios'])): ?>
-                    <div class="folder-years">
-                        <i class="far fa-calendar-alt me-1"></i><?= implode(' · ', $carpeta['anios']) ?>
-                    </div>
-                    <?php endif; ?>
-                </div>
-                <div class="folder-badges">
-                    <span class="fbadge fbadge-total" title="Total"><?= $carpeta['total'] ?></span>
-                    <?php if ($carpeta['finales'] > 0): ?>
-                    <span class="fbadge fbadge-final" title="Finales"><?= $carpeta['finales'] ?> F</span>
-                    <?php endif; ?>
-                    <?php if ($carpeta['parciales'] > 0): ?>
-                    <span class="fbadge fbadge-parcial" title="Parciales"><?= $carpeta['parciales'] ?> P</span>
-                    <?php endif; ?>
-                </div>
-                <i class="fas fa-chevron-down folder-chevron"></i>
-            </button>
-
-            <div class="folder-body" id="<?= $uid ?>">
-                <?php if (empty($carpeta['archivos'])): ?>
-                <div class="folder-empty">
-                    <i class="fas fa-filter me-2"></i>No hay archivos con los filtros aplicados.
-                </div>
+    <!-- TABLA DE ARCHIVOS -->
+    <div class="backup-table fade-in">
+        <?php if ($totalArchivos > 0): ?>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="backupTable">
+                <thead>
+                    <tr>
+                        <th style="width: 5%;">#</th>
+                        <th style="width: 22%;">Alumno</th>
+                        <th style="width: 15%;">Grupo</th>
+                        <th style="width: 12%;">Turno</th>
+                        <th style="width: 28%;">Archivo</th>
+                        <th style="width: 10%;">Tipo</th>
+                        <th style="width: 13%;">Fecha</th>
+                        <th style="width: 10%;" class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php $i = 1; foreach ($archivos as $archivo):
+                        $nombreAlumno = $nombresAlumnos[$archivo['id_alumno']] ?? 'Desconocido';
+                    ?>
+                    <tr data-nombre="<?= strtolower(htmlspecialchars($archivo['nombre'])) ?>"
+                        data-alumno="<?= strtolower(htmlspecialchars($nombreAlumno)) ?>"
+                        data-id="<?= htmlspecialchars($archivo['id_alumno']) ?>">
+                        <td><strong class="text-muted"><?= $i++ ?></strong></td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="fas fa-user-circle text-secondary fs-5"></i>
+                                <div>
+                                    <strong class="d-block"><?= htmlspecialchars($nombreAlumno) ?></strong>
+                                    <?php if ($archivo['id_alumno']): ?>
+                                    <small class="text-muted">ID: <?= htmlspecialchars($archivo['id_alumno']) ?></small>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge-grupo">
+                                <i class="fas fa-users me-1"></i>
+                                <?= htmlspecialchars("$gradoNormalizado $grupoRomano") ?>
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge-turno">
+                                <i class="fas fa-sun me-1"></i>
+                                <?= htmlspecialchars($turnoNormalizado) ?>
+                            </span>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="fas fa-file-pdf text-danger"></i>
+                                <small class="text-truncate" style="max-width: 180px;" title="<?= htmlspecialchars($archivo['nombre']) ?>">
+                                    <?= htmlspecialchars($archivo['nombre']) ?>
+                                </small>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge-tipo badge-<?= strtolower($archivo['tipo']) ?>">
+                                <i class="fas fa-<?= $archivo['tipo'] === 'Final' ? 'check' : 'clock' ?>"></i>
+                                <?= htmlspecialchars($archivo['tipo']) ?>
+                            </span>
+                        </td>
+                        <td>
+                            <span class="fecha-badge">
+                                <i class="far fa-calendar-alt"></i>
+                                <?= date('d/m/Y', (int)$archivo['fecha']) ?>
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <?php if ($archivo['existe']): ?>
+                                <button type="button"
+                                        class="btn btn-action btn-view"
+                                        title="Vista previa"
+                                        onclick="abrirPreviewPDF('<?= addslashes($archivo['ruta_web']) ?>', '<?= addslashes($archivo['nombre']) ?>')">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <a href="<?= htmlspecialchars($archivo['ruta_web']) ?>"
+                                   download="<?= htmlspecialchars($archivo['nombre']) ?>"
+                                   class="btn btn-action btn-download"
+                                   title="Descargar PDF">
+                                    <i class="fas fa-download"></i>
+                                </a>
+                            <?php else: ?>
+                                <span class="text-muted small" title="Archivo no accesible">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                </span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <div class="empty-state fade-in">
+            <i class="fas fa-folder-open"></i>
+            <h4 class="mb-3">No hay respaldos disponibles</h4>
+            <p class="mb-0 text-muted">
+                <?php if (!is_dir($rutaCompleta)): ?>
+                    <strong>La carpeta no existe.</strong><br>
+                    <small>Verifica que <code>generar_respaldo_grupal.php</code> haya creado los archivos.</small>
                 <?php else: ?>
-                <div class="table-responsive">
-                    <table class="inner-table">
-                        <thead>
-                            <tr>
-                                <th style="width:45%">Alumno</th>
-                                <th style="width:10%">Gen.</th>
-                                <th style="width:9%">Tipo</th>
-                                <th class="col-kb" style="width:8%">KB</th>
-                                <th style="width:18%">Fecha</th>
-                                <th style="width:10%; text-align:center;">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        <?php foreach ($carpeta['archivos'] as $arch): ?>
-                            <tr data-nombre="<?= strtolower(htmlspecialchars($arch['nombre_alumno'])) ?>"
-                                data-generacion="<?= strtolower(htmlspecialchars($arch['generacion'])) ?>">
-                                <td>
-                                    <div class="fname-cell">
-                                        <div class="pdf-dot"><i class="fas fa-user me-1"></i></div>
-                                        <div>
-                                            <!-- SOLO NOMBRE DEL ALUMNO (sin apellidos) -->
-                                            <span class="fname-text" title="<?= htmlspecialchars($arch['nombre_alumno']) ?>">
-                                                <?= htmlspecialchars($arch['nombre_alumno']) ?>
-                                            </span>
-                                            <!-- Nombre del archivo en texto pequeño -->
-                                            <span class="fname-subtext" title="<?= htmlspecialchars($arch['nombre_archivo']) ?>">
-                                                <i class="fas fa-file-pdf me-1"></i><?= htmlspecialchars($arch['nombre_archivo']) ?>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td><span class="badge-gen"><?= htmlspecialchars($arch['generacion']) ?></span></td>
-                                <td>
-                                    <?php
-                                    $tc = $arch['tipo'] === 'Final'   ? 'tbadge-final'
-                                        : ($arch['tipo'] === 'Parcial' ? 'tbadge-parcial' : 'tbadge-otro');
-                                    ?>
-                                    <span class="tbadge <?= $tc ?>"><?= $arch['tipo'] ?></span>
-                                </td>
-                                <td class="col-kb" style="color:#6c757d; font-size:.8rem;">
-                                    <?= round($arch['tamano'] / 1024, 1) ?>
-                                </td>
-                                <td>
-                                    <span class="fecha-pill">
-                                        <i class="far fa-calendar-alt me-1"></i>
-                                        <?= date('d/m/Y H:i', $arch['fecha']) ?>
-                                    </span>
-                                </td>
-                                <td style="text-align:center;">
-                                    <button class="act-btn act-btn-view"
-                                            data-action="preview"
-                                            data-archivo="<?= htmlspecialchars($arch['nombre_archivo']) ?>"
-                                            data-carpeta="<?= htmlspecialchars($arch['carpeta']) ?>"
-                                            data-generacion="<?= htmlspecialchars($arch['generacion']) ?>"
-                                            data-turno="<?= htmlspecialchars($arch['turno']) ?>"
-                                            title="Vista previa">
-                                        <i class="fas fa-eye"></i>
-                                    </button>
-                                    <button class="act-btn act-btn-dl"
-                                            data-action="download"
-                                            data-archivo="<?= htmlspecialchars($arch['nombre_archivo']) ?>"
-                                            data-carpeta="<?= htmlspecialchars($arch['carpeta']) ?>"
-                                            data-generacion="<?= htmlspecialchars($arch['generacion']) ?>"
-                                            data-turno="<?= htmlspecialchars($arch['turno']) ?>"
-                                            title="Descargar">
-                                        <i class="fas fa-download"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                    Los archivos PDF generados aparecerán aquí automáticamente.
+                <?php endif; ?>
+            </p>
+            <a href="boleta_alumnos_nueva.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
+               class="btn btn-primary mt-4"
+               style="background: linear-gradient(135deg, #0f6fff, #14f1f8); border: none; padding: 12px 35px; border-radius: 50px;">
+                <i class="fas fa-plus me-2"></i>Generar Primer Respaldo
+            </a>
+        </div>
+        <?php endif; ?>
+    </div>
+
+</div>
+</div>
+
+<!-- ============================================================
+     MODAL DE VISTA PREVIA DE PDF
+     ============================================================ -->
+<div class="modal fade" id="modalPreviewPDF" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="previewTitle">
+                    <i class="fas fa-file-pdf me-2"></i>Vista Previa
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="pdf-preview-container">
+                    <iframe id="pdfFrame" title="Vista previa del PDF" src=""></iframe>
+                    <div id="pdfFallback" class="pdf-fallback d-none">
+                        <i class="fas fa-exclamation-circle fs-1 mb-3"></i>
+                        <p class="mb-3">Tu navegador no puede mostrar este PDF.</p>
+                        <a id="pdfDownloadLink" href="#" target="_blank" class="btn btn-light">
+                            <i class="fas fa-download me-2"></i>Descargar PDF
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a id="pdfDownloadBtn" href="#" download class="btn btn-success">
+                    <i class="fas fa-download me-2"></i>Descargar
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     MODAL GRÁFICA DOUGHNUT - MATERIA MÁS APROBADA
+     ============================================================ -->
+<div class="modal fade" id="modalGrafica" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 20px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #1a355e, #2b91ff); color: white;">
+                <h5 class="modal-title">
+                    <i class="fas fa-chart-pie me-2"></i><span id="graficaMateriaTitulo">Analítica</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <span class="badge bg-light text-dark px-3 py-2">
+                        <?= htmlspecialchars("{$grado}º {$grupoRomano} {$turno}") ?>
+                    </span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="graficaCircular"></canvas>
+                </div>
+                <div class="d-flex justify-content-center gap-4 mt-3 flex-wrap">
+                    <div class="text-center">
+                        <span class="badge bg-success px-3 py-2">
+                            <i class="fas fa-check-circle me-1"></i>
+                            <strong id="legendAprobados"><?= (int)($datosGraficaMateria['aprobados'] ?? 0) ?></strong> Aprobados
+                        </span>
+                    </div>
+                    <div class="text-center">
+                        <span class="badge bg-danger px-3 py-2">
+                            <i class="fas fa-times-circle me-1"></i>
+                            <strong id="legendReprobados"><?= (int)($datosGraficaMateria['reprobados'] ?? 0) ?></strong> Reprobados
+                        </span>
+                    </div>
+                </div>
+                <?php if (empty($datosGraficaMateria['total']) || (int)$datosGraficaMateria['total'] === 0): ?>
+                <div class="alert alert-info mt-3 mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    No hay datos de calificaciones para mostrar la gráfica de esta materia.
                 </div>
                 <?php endif; ?>
             </div>
-
-        </div>
-        <?php endforeach; ?>
-    </div>
-
-    <?php else: ?>
-    <div class="empty-global">
-        <div class="ei"><i class="fas fa-folder-open"></i></div>
-        <h5 style="color:#1a355e; font-weight:700;">
-            <?= empty($carpetas) ? 'No hay respaldos generados' : 'No hay respaldos con los filtros aplicados' ?>
-        </h5>
-        <p class="mb-4 text-muted">
-            <?php if (empty($carpetas)): ?>
-                Los archivos PDF aparecerán aquí organizados por generación, turno y grupo.
-            <?php else: ?>
-                Intenta ajustar los filtros o genera un nuevo respaldo.
-            <?php endif; ?>
-        </p>
-        <?php if ($grado && $grupo && $turno): ?>
-        <a href="boleta_alumnos_nueva.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
-           class="btn text-white fw-semibold px-4 py-2"
-           style="background:linear-gradient(135deg,#0f6fff,#14f1f8); border:none; border-radius:50px; text-decoration:none;">
-            <i class="fas fa-plus me-2"></i>Generar respaldo
-        </a>
-        <?php endif; ?>
-        <?php if (!empty($filtroGeneracion) || !empty($filtroAnio)): ?>
-        <br>
-        <button class="btn-clear-filters mt-3" onclick="limpiarFiltros()">
-            <i class="fas fa-undo me-1"></i>Restablecer filtros
-        </button>
-        <?php endif; ?>
-    </div>
-    <?php endif; ?>
-
-</div>
-
-<br>
-
-<?php 
-$footerPath = __DIR__ . '/footer_orientador.php';
-if (file_exists($footerPath)) {
-    include $footerPath;
-}
-?>
-
-<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.min.js"></script>
-
-<div class="modal fade" id="modalPreviewPDF" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered" style="max-width:90%; height:92vh; margin:4vh auto;">
-        <div class="modal-content" style="height:100%; border-radius:16px; overflow:hidden;">
-            <div class="modal-header border-0" style="background:linear-gradient(135deg,#1a355e,#2b91ff); padding:13px 20px;">
-                <h6 class="modal-title fw-bold text-white mb-0">
-                    <i class="fas fa-file-pdf me-2"></i><span id="preview-filename"></span>
-                </h6>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-            <div class="modal-body p-0" style="flex:1; overflow:hidden;">
-                <iframe id="pdf-iframe" src="" style="width:100%; height:100%; border:none;"></iframe>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-function toggleFolder(btn, id) {
-    const body = document.getElementById(id);
-    const isOpen = body.classList.contains('is-open');
-    body.classList.toggle('is-open', !isOpen);
-    btn.classList.toggle('is-open', !isOpen);
+// ============================================================
+// BOOTSTRAP: si el header no lo cargó, lo cargamos aquí (sin duplicar)
+// ============================================================
+function ensureBootstrapReady(cb){
+    if (window.bootstrap && window.bootstrap.Modal) return cb();
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js';
+    s.onload = cb;
+    document.head.appendChild(s);
 }
 
-function previsualizarPDF(archivo, carpeta, generacion, turno) {
-    // Construir URL correcta según arquitectura: generación/[AÑO]/[TURNO]/Grupos/[CARPETA]/
-    const url = `descargar_pdf.php?` +
-        `archivo=${encodeURIComponent(archivo)}` +
-        `&anio=${encodeURIComponent(generacion)}` +  // generacion es realmente el año
-        `&turno=${encodeURIComponent(turno)}` +
-        `&carpeta=${encodeURIComponent(carpeta)}` +
-        `&accion=visualizar`;
-    
-    document.getElementById('preview-filename').textContent = archivo;
-    document.getElementById('pdf-iframe').src = url;
-    new bootstrap.Modal(document.getElementById('modalPreviewPDF')).show();
-}
-
-function descargarPDF(archivo, carpeta, generacion, turno) {
-    // Construir URL correcta según arquitectura: generación/[AÑO]/[TURNO]/Grupos/[CARPETA]/
-    const url = `descargar_pdf.php?` +
-        `archivo=${encodeURIComponent(archivo)}` +
-        `&anio=${encodeURIComponent(generacion)}` +  // generacion es realmente el año
-        `&turno=${encodeURIComponent(turno)}` +
-        `&carpeta=${encodeURIComponent(carpeta)}` +
-        `&accion=descargar`;
-    
-    window.location.href = url;
-}
-
-document.getElementById('modalPreviewPDF')
-    .addEventListener('hidden.bs.modal', () => {
-        document.getElementById('pdf-iframe').src = '';
-    });
-
-document.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-action]');
-    if (!btn) return;
-    const { action, archivo, carpeta, generacion, turno } = btn.dataset;
-    if (action === 'preview')  previsualizarPDF(archivo, carpeta, generacion, turno);
-    if (action === 'download') descargarPDF(archivo, carpeta, generacion, turno);
-});
-
-// ══════════════════════════════════════════════════════════════
-// NUEVAS FUNCIONES: FILTROS EN CASCADA (de VERSION_B)
-// ══════════════════════════════════════════════════════════════
-
-// Mapeo de generación → años (desde PHP)
-const mapeoGeneracionAnios = <?= json_encode($mapeoGeneracionAnios) ?>;
-
-// Filtro Generación → Año Específico (cascada)
-document.getElementById('filtroGeneracionRango').addEventListener('change', function() {
-    const selectAnio = document.getElementById('filtroAnioEspecifico');
-    const generacionSeleccionada = this.value;
-    
-    // Limpiar opciones actuales (excepto la primera)
-    selectAnio.innerHTML = '<option value="">Todos los años</option>';
-    
-    if (generacionSeleccionada && mapeoGeneracionAnios[generacionSeleccionada]) {
-        // Poblar con años de la generación seleccionada
-        mapeoGeneracionAnios[generacionSeleccionada].forEach(anio => {
-            const option = document.createElement('option');
-            option.value = anio;
-            option.textContent = anio;
-            selectAnio.appendChild(option);
-        });
-    } else {
-        // Si no hay generación seleccionada, mostrar todos los años
-        const todosLosAnios = <?= json_encode($filtrosData['anios']) ?>;
-        todosLosAnios.forEach(anio => {
-            const option = document.createElement('option');
-            option.value = anio;
-            option.textContent = anio;
-            selectAnio.appendChild(option);
-        });
-    }
-});
-
-// Aplicar todos los filtros seleccionados
-function aplicarFiltrosMultiples() {
-    const url = new URL(window.location.href);
-    
-    // Obtener valores de los filtros
-    const generacionRango = document.getElementById('filtroGeneracionRango').value;
-    const anioEspecifico = document.getElementById('filtroAnioEspecifico').value;
-    const turno = document.getElementById('filtroTurno').value;
-    const grado = document.getElementById('filtroGrado').value;
-    const grupo = document.getElementById('filtroGrupo').value;
-    
-    // Si hay generación seleccionada, guardar el primer año de ese rango
-    if (generacionRango) {
-        const anioInicio = generacionRango.split(' - ')[0];
-        url.searchParams.set('generacion', anioInicio);
-    } else {
-        url.searchParams.delete('generacion');
-    }
-    
-    // Año específico
-    if (anioEspecifico) {
-        url.searchParams.set('anio', anioEspecifico);
-    } else {
-        url.searchParams.delete('anio');
-    }
-    
-    // Turno
-    if (turno) {
-        url.searchParams.set('turno', turno);
-    } else {
-        url.searchParams.delete('turno');
-    }
-    
-    // Grado
-    if (grado) {
-        url.searchParams.set('grado', grado);
-    } else {
-        url.searchParams.delete('grado');
-    }
-    
-    // Grupo
-    if (grupo) {
-        url.searchParams.set('grupo', grupo);
-    } else {
-        url.searchParams.delete('grupo');
-    }
-    
-    window.location.href = url.toString();
-}
-
-// ══════════════════════════════════════════════════════════════
-// FUNCIONES ANTIGUAS (mantenidas por compatibilidad)
-// Nota: aplicarFiltro() ya no se usa pero se mantiene por si acaso
-// ══════════════════════════════════════════════════════════════
-
+// ============================================================
+// FILTRADO Y BÚSQUEDA
+// ============================================================
 function aplicarFiltro(tipo, valor) {
     const url = new URL(window.location.href);
-    if (valor) {
-        url.searchParams.set(tipo, valor);
-    } else {
-        url.searchParams.delete(tipo);
-    }
+    if (valor) url.searchParams.set(tipo, valor);
+    else url.searchParams.delete(tipo);
     window.location.href = url.toString();
 }
 
 function limpiarFiltros() {
     const url = new URL(window.location.href);
-    url.searchParams.delete('generacion');
     url.searchParams.delete('anio');
-    url.searchParams.delete('turno');
-    url.searchParams.delete('grado');
-    url.searchParams.delete('grupo');
+    url.searchParams.delete('grupo_filtro');
+    url.searchParams.delete('turno_filtro');
     window.location.href = url.toString();
 }
 
-function filtrarArchivos(q) {
-    q = q.trim().toLowerCase();
-    document.querySelectorAll('.folder-card').forEach(card => {
-        const rows = card.querySelectorAll('tbody tr');
-        let vis = 0;
-        rows.forEach(row => {
-            const nombre = row.dataset.nombre || '';
-            const ok = !q || nombre.includes(q);
-            row.style.display = ok ? '' : 'none';
-            if (ok) vis++;
-        });
-        if (q) {
-            const body = card.querySelector('.folder-body');
-            const hdr  = card.querySelector('.folder-hdr');
-            if (vis > 0) {
-                body.classList.add('is-open');
-                hdr.classList.add('is-open');
-                card.style.display = '';
-            } else {
-                card.style.display = 'none';
+function filtrarTabla() {
+    const input = document.getElementById('searchInput');
+    const filter = (input.value || '').toLowerCase().trim();
+    const table = document.getElementById('backupTable');
+    if (!table) return;
+
+    const rows = table.getElementsByTagName('tr');
+    for (let i = 1; i < rows.length; i++) {
+        const nombre = rows[i].getAttribute('data-nombre') || '';
+        const alumno = rows[i].getAttribute('data-alumno') || '';
+        const id = rows[i].getAttribute('data-id') || '';
+        const match = nombre.includes(filter) || alumno.includes(filter) || id.includes(filter);
+        rows[i].style.display = match ? '' : 'none';
+    }
+}
+
+// ============================================================
+// VISTA PREVIA DE PDF
+// ============================================================
+function abrirPreviewPDF(rutaWeb, nombreArchivo) {
+    ensureBootstrapReady(() => {
+        const modal = new bootstrap.Modal(document.getElementById('modalPreviewPDF'));
+        const iframe = document.getElementById('pdfFrame');
+        const fallback = document.getElementById('pdfFallback');
+        const downloadLink = document.getElementById('pdfDownloadLink');
+        const downloadBtn = document.getElementById('pdfDownloadBtn');
+        const title = document.getElementById('previewTitle');
+
+        title.innerHTML = `<i class="fas fa-file-pdf me-2"></i>${nombreArchivo}`;
+
+        downloadLink.href = rutaWeb;
+        downloadLink.download = nombreArchivo;
+        downloadBtn.href = rutaWeb;
+        downloadBtn.setAttribute('download', nombreArchivo);
+
+        iframe.src = rutaWeb;
+        iframe.classList.remove('d-none');
+        fallback.classList.add('d-none');
+
+        iframe.onerror = function() {
+            iframe.classList.add('d-none');
+            fallback.classList.remove('d-none');
+        };
+
+        setTimeout(() => {
+            try {
+                // Si el iframe bloquea por CORS, caemos al fallback
+                void iframe.contentDocument;
+            } catch (e) {
+                iframe.classList.add('d-none');
+                fallback.classList.remove('d-none');
             }
-        } else {
-            card.style.display = '';
-        }
+        }, 1500);
+
+        modal.show();
+
+        document.getElementById('modalPreviewPDF').addEventListener('hidden.bs.modal', function handler() {
+            iframe.src = '';
+            this.removeEventListener('hidden.bs.modal', handler);
+        }, { once: true });
     });
 }
 
-// ══════════════════════════════════════════════════════════════
-// INICIALIZACIÓN: Poblar años según generación preseleccionada
-// ══════════════════════════════════════════════════════════════
+// ============================================================
+// GRÁFICA DOUGHNUT - MATERIA MÁS APROBADA
+// ============================================================
+function abrirModalGrafica() {
+    ensureBootstrapReady(() => {
+        const datos = <?= json_encode($datosGraficaMateria, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+        const modalEl = document.getElementById('modalGrafica');
+        const tituloEl = document.getElementById('graficaMateriaTitulo');
 
-document.addEventListener('DOMContentLoaded', () => {
-    const generacionActual = document.getElementById('filtroGeneracionRango').value;
-    if (generacionActual) {
-        // Disparar evento change para actualizar años
-        document.getElementById('filtroGeneracionRango').dispatchEvent(new Event('change'));
-        
-        // Restaurar año seleccionado si existe
-        const anioActual = '<?= htmlspecialchars($filtroAnio) ?>';
-        if (anioActual) {
-            setTimeout(() => {
-                document.getElementById('filtroAnioEspecifico').value = anioActual;
-            }, 50);
+        if (datos.materia) tituloEl.textContent = datos.materia;
+
+        const ctx = document.getElementById('graficaCircular');
+        if (!ctx) return;
+
+        if (!datos.total || datos.total === 0) {
+            ctx.parentNode.innerHTML =
+                '<p class="text-center text-muted py-5"><i class="fas fa-chart-pie fs-1 mb-3 d-block"></i>No hay datos para la gráfica.</p>';
+            new bootstrap.Modal(modalEl).show();
+            return;
         }
-    }
-});
 
-// ══════════════════════════════════════════════════════════════
-// FUNCIÓN PARA MOSTRAR GRÁFICA DE RESPALDOS
-// ══════════════════════════════════════════════════════════════
+        if (window.graficaCircularInstance) window.graficaCircularInstance.destroy();
 
-let chartInstance = null; // Variable global para guardar la instancia del gráfico
-
-function mostrarGrafica() {
-    // Datos desde PHP
-    const anios = <?= json_encode($aniosGrafica) ?>;
-    const completas = <?= json_encode($completasGrafica) ?>;
-    const incompletas = <?= json_encode($incompletasGrafica) ?>;
-    
-    // Mostrar modal
-    const modal = new bootstrap.Modal(document.getElementById('modalGrafica'));
-    modal.show();
-    
-    // Esperar a que el modal se muestre completamente antes de crear el gráfico
-    document.getElementById('modalGrafica').addEventListener('shown.bs.modal', function () {
-        // Destruir gráfico anterior si existe
-        if (chartInstance) {
-            chartInstance.destroy();
-        }
-        
-        // Crear nuevo gráfico
-        const ctx = document.getElementById('respaldosChart').getContext('2d');
-        chartInstance = new Chart(ctx, {
-            type: 'bar',
+        window.graficaCircularInstance = new Chart(ctx.getContext('2d'), {
+            type: 'doughnut',
             data: {
-                labels: anios,
-                datasets: [
-                    {
-                        label: 'Boletas Completas (Finales)',
-                        data: completas,
-                        backgroundColor: 'rgba(40, 167, 69, 0.8)',
-                        borderColor: 'rgba(40, 167, 69, 1)',
-                        borderWidth: 2,
-                        borderRadius: 8
-                    },
-                    {
-                        label: 'Boletas Incompletas (Parciales)',
-                        data: incompletas,
-                        backgroundColor: 'rgba(255, 193, 7, 0.8)',
-                        borderColor: 'rgba(255, 193, 7, 1)',
-                        borderWidth: 2,
-                        borderRadius: 8
-                    }
-                ]
+                labels: ['Aprobados', 'Reprobados'],
+                datasets: [{
+                    data: [
+                        <?= (int)($datosGraficaMateria['aprobados'] ?? 0) ?>,
+                        <?= (int)($datosGraficaMateria['reprobados'] ?? 0) ?>
+                    ],
+                    backgroundColor: ['#28a745', '#dc3545'],
+                    borderColor: '#ffffff',
+                    borderWidth: 3,
+                    hoverOffset: 10
+                }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                cutout: '70%',
                 plugins: {
                     legend: {
-                        display: true,
-                        position: 'top',
-                        labels: {
-                            font: {
-                                size: 14,
-                                family: 'League Spartan',
-                                weight: '600'
-                            },
-                            padding: 20,
-                            usePointStyle: true,
-                            pointStyle: 'circle'
-                        }
-                    },
-                    title: {
-                        display: true,
-                        text: 'Distribución de Respaldos por Año',
-                        font: {
-                            size: 18,
-                            family: 'League Spartan',
-                            weight: '700'
-                        },
-                        padding: 20,
-                        color: '#1a355e'
+                        position: 'bottom',
+                        labels: { padding: 15, font: { size: 11, weight: '500' }, usePointStyle: true }
                     },
                     tooltip: {
                         backgroundColor: 'rgba(26, 53, 94, 0.95)',
-                        titleFont: {
-                            size: 14,
-                            family: 'League Spartan',
-                            weight: '600'
-                        },
-                        bodyFont: {
-                            size: 13,
-                            family: 'League Spartan'
-                        },
+                        titleFont: { size: 13, weight: '600' },
+                        bodyFont: { size: 12 },
                         padding: 12,
-                        cornerRadius: 8,
-                        displayColors: true,
                         callbacks: {
                             label: function(context) {
-                                let label = context.dataset.label || '';
-                                if (label) {
-                                    label += ': ';
-                                }
-                                label += context.parsed.y + ' boleta(s)';
-                                return label;
-                            },
-                            footer: function(tooltipItems) {
-                                let total = 0;
-                                tooltipItems.forEach(function(tooltipItem) {
-                                    total += tooltipItem.parsed.y;
-                                });
-                                return 'Total: ' + total + ' boletas';
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                const total = <?= (int)($datosGraficaMateria['total'] ?? 1) ?>;
+                                const percentage = total > 0 ? Math.round((value/total)*100) : 0;
+                                return `${label}: ${value} alumno(s) (${percentage}%)`;
                             }
                         }
                     }
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            stepSize: 1,
-                            font: {
-                                size: 12,
-                                family: 'League Spartan'
-                            }
-                        },
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.05)',
-                            drawBorder: false
-                        }
-                    },
-                    x: {
-                        ticks: {
-                            font: {
-                                size: 12,
-                                family: 'League Spartan',
-                                weight: '600'
-                            }
-                        },
-                        grid: {
-                            display: false
-                        }
-                    }
-                },
-                animation: {
-                    duration: 1000,
-                    easing: 'easeInOutQuart'
-                },
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                }
+                animation: { animateScale: true, animateRotate: true, duration: 800 }
             }
         });
-    }, { once: true }); // Solo ejecutar una vez por apertura de modal
+
+        new bootstrap.Modal(modalEl).show();
+
+        modalEl.addEventListener('hidden.bs.modal', function handler() {
+            if (window.graficaCircularInstance) {
+                window.graficaCircularInstance.destroy();
+                window.graficaCircularInstance = null;
+            }
+            this.removeEventListener('hidden.bs.modal', handler);
+        }, { once: true });
+    });
 }
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', function() {
+    // Tooltips si Bootstrap está listo (si no, se activan al cargar)
+    ensureBootstrapReady(() => {
+        if (bootstrap && bootstrap.Tooltip) {
+            document.querySelectorAll('[title]').forEach(el => {
+                if (!el.getAttribute('data-bs-toggle')) new bootstrap.Tooltip(el, { trigger: 'hover' });
+            });
+        }
+    });
+});
 </script>
 
-</body>
-</html>
+<?php
+// ✅ FOOTER AL FINAL (para no romper modales/scripts)
+require_once __DIR__ . '/footer_orientador.php';
