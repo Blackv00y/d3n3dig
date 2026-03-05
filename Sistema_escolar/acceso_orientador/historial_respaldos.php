@@ -10,13 +10,14 @@ if (!isset($_SESSION['id_credencial'])) {
 
 require_once __DIR__ . '/../funciones/conexQRConejo.php';
 
-$secretKey   = 'your-secret-key';
-$grado       = $_GET['grado'] ?? '';
-$grupo       = $_GET['grupo'] ?? '';
-$turno       = $_GET['turno'] ?? '';
-$anioFiltro  = $_GET['anio'] ?? '';
-$grupoFiltro = $_GET['grupo_filtro'] ?? '';
-$turnoFiltro = $_GET['turno_filtro'] ?? '';
+$secretKey        = 'your-secret-key';
+$grado            = $_GET['grado'] ?? '';
+$grupo            = $_GET['grupo'] ?? '';
+$turno            = $_GET['turno'] ?? '';
+$generacionFiltro = $_GET['generacion'] ?? '';  // NUEVO: Filtro de generación (ej: "2024 - 2027")
+$anioFiltro       = $_GET['anio'] ?? '';         // NUEVO: Filtro de año específico
+$grupoFiltro      = $_GET['grupo_filtro'] ?? '';
+$turnoFiltro      = $_GET['turno_filtro'] ?? '';
 
 // ── Obtener ID de escuela del usuario ──
 $stmt = mysqli_prepare($conexion, "SELECT id_escuela FROM credenciales WHERE id_credencial = ?");
@@ -64,6 +65,31 @@ function normalizarGrado($grado) {
     return isset($mapeoGrados[$grado]) ? $mapeoGrados[$grado] : ucfirst(strtolower($grado));
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// 🆕 FUNCIONES DE GENERACIÓN (Ciclos de 3 años - Preparatoria)
+// ══════════════════════════════════════════════════════════════════════
+
+function calcularGeneracion($anio) {
+    $anio = (int)$anio;
+    $base = 2024;
+    $diferencia = $anio - $base;
+    $ciclo = floor($diferencia / 3);
+    $anioInicio = $base + ($ciclo * 3);
+    $anioFin = $anioInicio + 3;
+    return "$anioInicio - $anioFin";
+}
+
+function anioPerteneceAGeneracion($anio, $generacion) {
+    if (empty($generacion)) return true;
+    $anio = (int)$anio;
+    if (preg_match('/^(\d{4})\s*-\s*(\d{4})$/', $generacion, $matches)) {
+        $inicio = (int)$matches[1];
+        $fin = (int)$matches[2];
+        return $anio >= $inicio && $anio < $fin;
+    }
+    return true;
+}
+
 // 🔧 FUNCIÓN CLAVE: Convertir ruta de archivo a URL web accesible
 function rutaArchivoAUrl($rutaArchivo, $baseDir) {
     $webRoot = str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT']));
@@ -92,58 +118,131 @@ function decryptData($data, $key) {
 }
 
 // ============================================================
-// CONSTRUIR RUTA CON NUEVA ESTRUCTURA
+// 🆕 ESCANEO DINÁMICO CON SOPORTE DE GENERACIONES
 // ============================================================
 
 $rutaBaseRespaldos = __DIR__ . '/respaldos/boletas/';
-$gradoNormalizado  = normalizarGrado($grado);
-$grupoRomano       = convertirGrupoARomano($grupo);
-$turnoNormalizado  = ucfirst(strtolower(trim($turno)));
+$rutaEscuela = $rutaBaseRespaldos . $id_escuela . '/generación/';
 
-$anioBusqueda   = !empty($anioFiltro) ? $anioFiltro : date('Y');
-$turnoBusqueda  = !empty($turnoFiltro) ? ucfirst(strtolower($turnoFiltro)) : $turnoNormalizado;
-$grupoBusqueda  = !empty($grupoFiltro) ? $grupoFiltro : $grupoRomano;
+// ── DETERMINAR AÑOS A ESCANEAR ──
+$aniosAEscanear = [];
+$generacionesDisponibles = [];
+$aniosDisponibles = [];
 
-$rutaCompleta = $rutaBaseRespaldos
-    . $id_escuela . '/'
-    . 'generación/'
-    . $anioBusqueda . '/'
-    . $turnoBusqueda . '/'
-    . 'Grupos/'
-    . $gradoNormalizado . ' ' . $grupoBusqueda . '/';
-
-// ── OBTENER ARCHIVOS PDF ──
-$archivos   = [];
-$idsAlumnos = [];
-
-if (is_dir($rutaCompleta)) {
-    $scan = scandir($rutaCompleta);
-    foreach ($scan as $file) {
-        if ($file !== '.' && $file !== '..' && strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'pdf') {
-            $path = $rutaCompleta . $file;
-
-            $idAlumno = '';
-            if (preg_match('/Boleta_(?:Final|Parcial|Manual)_(\d+)_/', $file, $matches)) {
-                $idAlumno = $matches[1];
-                if (!in_array($idAlumno, $idsAlumnos, true)) {
-                    $idsAlumnos[] = $idAlumno;
-                }
-            }
-
-            $archivos[] = [
-                'nombre'   => $file,
-                'ruta_fs'  => $path,
-                'ruta_web' => rutaArchivoAUrl($path, __DIR__),
-                'fecha'    => @filemtime($path) ?: time(),
-                'tipo'     => (strpos($file, 'Boleta_Final_') !== false) ? 'Final'
-                            : ((strpos($file, 'Boleta_Parcial_') !== false) ? 'Parcial' : 'Otro'),
-                'id_alumno'=> $idAlumno,
-                'existe'   => file_exists($path) && is_readable($path),
-            ];
+if (!empty($generacionFiltro)) {
+    // Si hay filtro de generación, obtener todos los años de ese rango
+    if (preg_match('/^(\d{4})\s*-\s*(\d{4})$/', $generacionFiltro, $matches)) {
+        $inicio = (int)$matches[1];
+        $fin = (int)$matches[2];
+        for ($y = $inicio; $y < $fin; $y++) {
+            $aniosAEscanear[] = $y;
         }
     }
-    usort($archivos, function ($a, $b) { return $b['fecha'] <=> $a['fecha']; });
+} elseif (!empty($anioFiltro)) {
+    // Si solo hay filtro de año específico
+    $aniosAEscanear[] = $anioFiltro;
+} else {
+    // Sin filtros: escanear todos los años disponibles
+    if (is_dir($rutaEscuela)) {
+        $dirs = array_diff(scandir($rutaEscuela), ['.', '..']);
+        foreach ($dirs as $dir) {
+            if (is_dir($rutaEscuela . $dir) && preg_match('/^\d{4}$/', $dir)) {
+                $aniosAEscanear[] = $dir;
+                $aniosDisponibles[] = $dir;
+                $gen = calcularGeneracion($dir);
+                if (!in_array($gen, $generacionesDisponibles)) {
+                    $generacionesDisponibles[] = $gen;
+                }
+            }
+        }
+    }
 }
+
+// ── ESCANEAR ARCHIVOS EN LOS AÑOS DETERMINADOS ──
+$archivos = [];
+$idsAlumnos = [];
+$turnosDisponibles = [];
+$gruposDisponibles = [];
+
+foreach ($aniosAEscanear as $anio) {
+    $rutaAnio = $rutaEscuela . $anio . '/';
+    if (!is_dir($rutaAnio)) continue;
+    
+    // Obtener turnos disponibles
+    $turnos = array_diff(scandir($rutaAnio), ['.', '..']);
+    
+    foreach ($turnos as $turnoDir) {
+        if (!is_dir($rutaAnio . $turnoDir)) continue;
+        
+        // Agregar a lista de turnos disponibles
+        if (!in_array($turnoDir, $turnosDisponibles)) {
+            $turnosDisponibles[] = $turnoDir;
+        }
+        
+        // Aplicar filtro de turno
+        if (!empty($turnoFiltro) && strtolower($turnoDir) !== strtolower($turnoFiltro)) {
+            continue;
+        }
+        
+        $rutaGrupos = $rutaAnio . $turnoDir . '/Grupos/';
+        if (!is_dir($rutaGrupos)) continue;
+        
+        $grupos = array_diff(scandir($rutaGrupos), ['.', '..']);
+        
+        foreach ($grupos as $grupoDir) {
+            $rutaGrupo = $rutaGrupos . $grupoDir . '/';
+            if (!is_dir($rutaGrupo)) continue;
+            
+            // Agregar a lista de grupos disponibles
+            if (!in_array($grupoDir, $gruposDisponibles)) {
+                $gruposDisponibles[] = $grupoDir;
+            }
+            
+            // Extraer grado y grupo para filtros
+            $partes = explode(' ', $grupoDir, 2);
+            $gradoGrupo = normalizarGrado($partes[0] ?? '');
+            $letraGrupo = $partes[1] ?? '';
+            
+            // Aplicar filtros de grado y grupo
+            if (!empty($grado) && $gradoGrupo !== normalizarGrado($grado)) continue;
+            if (!empty($grupoFiltro) && $letraGrupo !== $grupoFiltro) continue;
+            
+            // Escanear PDFs
+            $scan = scandir($rutaGrupo);
+            foreach ($scan as $file) {
+                if ($file !== '.' && $file !== '..' && strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'pdf') {
+                    $path = $rutaGrupo . $file;
+                    
+                    $idAlumno = '';
+                    if (preg_match('/Boleta_(?:Final|Parcial|Manual)_(\d+)_/', $file, $matches)) {
+                        $idAlumno = $matches[1];
+                        if (!in_array($idAlumno, $idsAlumnos, true)) {
+                            $idsAlumnos[] = $idAlumno;
+                        }
+                    }
+                    
+                    $archivos[] = [
+                        'nombre'     => $file,
+                        'ruta_fs'    => $path,
+                        'ruta_web'   => rutaArchivoAUrl($path, __DIR__),
+                        'fecha'      => @filemtime($path) ?: time(),
+                        'tipo'       => (strpos($file, 'Boleta_Final_') !== false) ? 'Final'
+                                      : ((strpos($file, 'Boleta_Parcial_') !== false) ? 'Parcial' : 'Otro'),
+                        'id_alumno'  => $idAlumno,
+                        'existe'     => file_exists($path) && is_readable($path),
+                        'anio'       => $anio,
+                        'turno'      => $turnoDir,
+                        'grado'      => $gradoGrupo,
+                        'grupo'      => $letraGrupo,
+                        'generacion' => calcularGeneracion($anio),
+                    ];
+                }
+            }
+        }
+    }
+}
+
+usort($archivos, function ($a, $b) { return $b['fecha'] <=> $a['fecha']; });
 
 // ── OBTENER NOMBRES DE ALUMNOS ──
 $nombresAlumnos = [];
@@ -224,12 +323,124 @@ if (!empty($idsAlumnos)) {
     }
 }
 
-// ── ESTADÍSTICAS GENERALES ──
-$totalArchivos   = count($archivos);
-$boletasFinales  = count(array_filter($archivos, fn($a) => $a['tipo'] === 'Final'));
-$boletasParciales= count(array_filter($archivos, fn($a) => $a['tipo'] === 'Parcial'));
+// ============================================================
+// 🆕 ESTADÍSTICAS: APROBADOS Y REPROBADOS (GENERAL)
+// ============================================================
+$estadisticasGenerales = [
+    'total_alumnos' => 0,
+    'aprobados' => 0,
+    'reprobados' => 0,
+    'por_generacion' => [],
+    'por_turno' => [],
+    'turno_mayoria' => '',
+    'generacion_mayoria' => '',
+];
 
-mysqli_close($conexion);
+if (!empty($idsAlumnos)) {
+    $idsStr = implode(',', array_map('intval', $idsAlumnos));
+    
+    // Obtener promedios generales de todos los alumnos encontrados
+    $queryStats = "
+        SELECT 
+            c.id_alumno,
+            cr.grado_credencial,
+            cr.grupo_credencial,
+            cr.turno_credencial,
+            AVG(
+                CASE 
+                    WHEN c.primer_parcial IS NOT NULL 
+                     AND c.segundo_parcial IS NOT NULL 
+                     AND c.tercer_parcial IS NOT NULL
+                    THEN (c.primer_parcial + c.segundo_parcial + c.tercer_parcial) / 3
+                    ELSE NULL
+                END
+            ) as promedio_general
+        FROM calificaciones c
+        JOIN credenciales cr ON c.id_alumno = cr.id_credencial
+        WHERE c.id_alumno IN ($idsStr)
+        GROUP BY c.id_alumno, cr.grado_credencial, cr.grupo_credencial, cr.turno_credencial
+        HAVING promedio_general IS NOT NULL
+    ";
+    
+    $result = mysqli_query($conexion, $queryStats);
+    
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $promedio = $row['promedio_general'];
+            $promedioFinal = (($promedio - floor($promedio)) >= 0.6) ? ceil($promedio) : floor($promedio);
+            $aprobado = $promedioFinal >= 7;
+            
+            $estadisticasGenerales['total_alumnos']++;
+            
+            if ($aprobado) {
+                $estadisticasGenerales['aprobados']++;
+            } else {
+                $estadisticasGenerales['reprobados']++;
+            }
+            
+            // Estadísticas por turno
+            $turno = $row['turno_credencial'];
+            if (!isset($estadisticasGenerales['por_turno'][$turno])) {
+                $estadisticasGenerales['por_turno'][$turno] = ['aprobados' => 0, 'reprobados' => 0, 'total' => 0];
+            }
+            if ($aprobado) {
+                $estadisticasGenerales['por_turno'][$turno]['aprobados']++;
+            } else {
+                $estadisticasGenerales['por_turno'][$turno]['reprobados']++;
+            }
+            $estadisticasGenerales['por_turno'][$turno]['total']++;
+        }
+    }
+    
+    // Determinar turno con más alumnos
+    $maxAlumnosTurno = 0;
+    foreach ($estadisticasGenerales['por_turno'] as $turno => $stats) {
+        if ($stats['total'] > $maxAlumnosTurno) {
+            $maxAlumnosTurno = $stats['total'];
+            $estadisticasGenerales['turno_mayoria'] = $turno;
+        }
+    }
+}
+
+// Estadísticas por generación (de los archivos escaneados)
+foreach ($archivos as $archivo) {
+    $generacion = $archivo['generacion'] ?? calcularGeneracion(date('Y'));
+    if (!isset($estadisticasGenerales['por_generacion'][$generacion])) {
+        $estadisticasGenerales['por_generacion'][$generacion] = [
+            'archivos' => 0,
+            'finales' => 0,
+            'parciales' => 0
+        ];
+    }
+    $estadisticasGenerales['por_generacion'][$generacion]['archivos']++;
+    if ($archivo['tipo'] === 'Final') {
+        $estadisticasGenerales['por_generacion'][$generacion]['finales']++;
+    } elseif ($archivo['tipo'] === 'Parcial') {
+        $estadisticasGenerales['por_generacion'][$generacion]['parciales']++;
+    }
+}
+
+// Determinar generación con más archivos
+$maxArchivosGen = 0;
+foreach ($estadisticasGenerales['por_generacion'] as $gen => $stats) {
+    if ($stats['archivos'] > $maxArchivosGen) {
+        $maxArchivosGen = $stats['archivos'];
+        $estadisticasGenerales['generacion_mayoria'] = $gen;
+    }
+}
+$totalArchivos   = count($archivos);
+    $boletasFinales  = count(array_filter($archivos, fn($a) => $a['tipo'] === 'Final'));
+    $boletasParciales= count(array_filter($archivos, fn($a) => $a['tipo'] === 'Parcial'));
+
+    // ══════════════════════════════════════════════════════════════════════
+    // VARIABLES PARA LA VISTA (CORREGIR ERRORES DE UNDEFINED VARIABLE)
+    // ══════════════════════════════════════════════════════════════════════
+    $grupoRomano = convertirGrupoARomano($grupo);
+    $gradoNormalizado = normalizarGrado($grado);
+    $turnoNormalizado = ucfirst(strtolower($turno));
+    $anioBusqueda = !empty($anioFiltro) ? $anioFiltro : date('Y');
+
+    mysqli_close($conexion);
 
 // ============================================================
 // ✅ HEADER (SOLO 1 VEZ) — NO DUPLICAR HTML/HEAD/BODY
@@ -590,13 +801,27 @@ require_once __DIR__ . '/header_orientador.php';
         </div>
     </div>
 
-    <!-- FILTROS -->
+    <!-- 🆕 FILTROS ACTUALIZADOS CON GENERACIÓN -->
     <div class="filters-row fade-in">
         <div class="filter-group">
-            <label><i class="fas fa-calendar me-1"></i>Año</label>
+            <label><i class="fas fa-graduation-cap me-1"></i>Generación (3 años)</label>
+            <select class="filter-select" onchange="aplicarFiltro('generacion', this.value)">
+                <option value="">Todas las generaciones</option>
+                <?php 
+                // Generar generaciones de 3 años desde 2024
+                $anioActual = date('Y');
+                for($base = 2024; $base <= $anioActual + 3; $base += 3): 
+                    $gen = "$base - " . ($base + 3);
+                ?>
+                <option value="<?= $gen ?>" <?= $generacionFiltro == $gen ? 'selected' : '' ?>><?= $gen ?></option>
+                <?php endfor; ?>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label><i class="fas fa-calendar me-1"></i>Año Específico</label>
             <select class="filter-select" onchange="aplicarFiltro('anio', this.value)">
-                <option value="">Todos</option>
-                <?php for($y = date('Y'); $y >= 2020; $y--): ?>
+                <option value="">Todos los años</option>
+                <?php for($y = date('Y'); $y >= 2024; $y--): ?>
                 <option value="<?= $y ?>" <?= $anioFiltro == $y ? 'selected' : '' ?>><?= $y ?></option>
                 <?php endfor; ?>
             </select>
@@ -614,8 +839,11 @@ require_once __DIR__ . '/header_orientador.php';
             <label><i class="fas fa-sun me-1"></i>Turno</label>
             <select class="filter-select" onchange="aplicarFiltro('turno_filtro', this.value)">
                 <option value="">Todos</option>
-                <option value="Matutino" <?= $turnoFiltro == 'Matutino' ? 'selected' : '' ?>>Matutino</option>
-                <option value="Vespertino" <?= $turnoFiltro == 'Vespertino' ? 'selected' : '' ?>>Vespertino</option>
+                <?php foreach($turnosDisponibles as $t): ?>
+                <option value="<?= htmlspecialchars($t) ?>" <?= $turnoFiltro == $t ? 'selected' : '' ?>>
+                    <?= htmlspecialchars(ucfirst($t)) ?>
+                </option>
+                <?php endforeach; ?>
             </select>
         </div>
         <div style="align-self: flex-end;">
@@ -625,10 +853,13 @@ require_once __DIR__ . '/header_orientador.php';
         </div>
     </div>
 
-    <!-- BOTÓN DE ESTADÍSTICAS -->
-    <div class="mb-3 fade-in">
-        <button class="btn btn-stats" onclick="abrirModalGrafica()">
-            <i class="fas fa-chart-pie"></i> Ver <?= htmlspecialchars($datosGraficaMateria['materia'] ?? 'Analítica') ?>
+    <!-- 🆕 BOTONES DE ACCIÓN -->
+    <div class="mb-3 fade-in d-flex gap-2">
+        <button class="btn btn-stats" onclick="abrirModalEstadisticas()">
+            <i class="fas fa-chart-bar"></i> Estadísticas
+        </button>
+        <button class="btn btn-outline-primary" onclick="window.location.href='ver_auditoria_respaldos.php'">
+            <i class="fas fa-clipboard-list"></i> Ver Auditoría
         </button>
     </div>
 
@@ -792,46 +1023,138 @@ require_once __DIR__ . '/header_orientador.php';
 </div>
 
 <!-- ============================================================
-     MODAL GRÁFICA DOUGHNUT - MATERIA MÁS APROBADA
+     🆕 MODAL ESTADÍSTICAS - APROBADOS Y REPROBADOS
      ============================================================ -->
-<div class="modal fade" id="modalGrafica" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+<div class="modal fade" id="modalEstadisticas" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content" style="border-radius: 20px;">
             <div class="modal-header" style="background: linear-gradient(135deg, #1a355e, #2b91ff); color: white;">
                 <h5 class="modal-title">
-                    <i class="fas fa-chart-pie me-2"></i><span id="graficaMateriaTitulo">Analítica</span>
+                    <i class="fas fa-chart-bar me-2"></i>Estadísticas Generales
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="text-center mb-3">
-                    <span class="badge bg-light text-dark px-3 py-2">
-                        <?= htmlspecialchars("{$grado}º {$grupoRomano} {$turno}") ?>
-                    </span>
-                </div>
-                <div class="chart-container">
-                    <canvas id="graficaCircular"></canvas>
-                </div>
-                <div class="d-flex justify-content-center gap-4 mt-3 flex-wrap">
-                    <div class="text-center">
-                        <span class="badge bg-success px-3 py-2">
-                            <i class="fas fa-check-circle me-1"></i>
-                            <strong id="legendAprobados"><?= (int)($datosGraficaMateria['aprobados'] ?? 0) ?></strong> Aprobados
-                        </span>
+                
+                <!-- Resumen General -->
+                <div class="text-center mb-4">
+                    <h6 class="text-muted mb-3">Resumen General</h6>
+                    <div class="row">
+                        <div class="col-4">
+                            <div class="p-3" style="background: #f8f9fa; border-radius: 10px;">
+                                <div style="font-size: 2rem; font-weight: bold; color: #1a355e;">
+                                    <?= $estadisticasGenerales['total_alumnos'] ?>
+                                </div>
+                                <small class="text-muted">Total Alumnos</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-3" style="background: #d1f4e0; border-radius: 10px;">
+                                <div style="font-size: 2rem; font-weight: bold; color: #28a745;">
+                                    <?= $estadisticasGenerales['aprobados'] ?>
+                                </div>
+                                <small class="text-muted">Aprobados</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-3" style="background: #fce4ec; border-radius: 10px;">
+                                <div style="font-size: 2rem; font-weight: bold; color: #dc3545;">
+                                    <?= $estadisticasGenerales['reprobados'] ?>
+                                </div>
+                                <small class="text-muted">Reprobados</small>
+                            </div>
+                        </div>
                     </div>
-                    <div class="text-center">
-                        <span class="badge bg-danger px-3 py-2">
-                            <i class="fas fa-times-circle me-1"></i>
-                            <strong id="legendReprobados"><?= (int)($datosGraficaMateria['reprobados'] ?? 0) ?></strong> Reprobados
-                        </span>
-                    </div>
                 </div>
-                <?php if (empty($datosGraficaMateria['total']) || (int)$datosGraficaMateria['total'] === 0): ?>
-                <div class="alert alert-info mt-3 mb-0">
-                    <i class="fas fa-info-circle me-2"></i>
-                    No hay datos de calificaciones para mostrar la gráfica de esta materia.
+
+                <!-- Estadísticas por Turno -->
+                <?php if (!empty($estadisticasGenerales['por_turno'])): ?>
+                <div class="mb-4">
+                    <h6 class="text-muted mb-3">
+                        <i class="fas fa-sun me-2"></i>Por Turno
+                        <?php if ($estadisticasGenerales['turno_mayoria']): ?>
+                        <span class="badge bg-primary ms-2">
+                            Mayoría: <?= htmlspecialchars($estadisticasGenerales['turno_mayoria']) ?>
+                        </span>
+                        <?php endif; ?>
+                    </h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Turno</th>
+                                    <th class="text-center">Total</th>
+                                    <th class="text-center">Aprobados</th>
+                                    <th class="text-center">Reprobados</th>
+                                    <th class="text-center">% Aprobación</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($estadisticasGenerales['por_turno'] as $turno => $stats): ?>
+                                <tr>
+                                    <td><strong><?= htmlspecialchars($turno) ?></strong></td>
+                                    <td class="text-center"><?= $stats['total'] ?></td>
+                                    <td class="text-center text-success"><strong><?= $stats['aprobados'] ?></strong></td>
+                                    <td class="text-center text-danger"><strong><?= $stats['reprobados'] ?></strong></td>
+                                    <td class="text-center">
+                                        <?php 
+                                        $porcentaje = $stats['total'] > 0 ? round(($stats['aprobados'] / $stats['total']) * 100, 1) : 0;
+                                        ?>
+                                        <span class="badge <?= $porcentaje >= 70 ? 'bg-success' : 'bg-warning' ?>">
+                                            <?= $porcentaje ?>%
+                                        </span>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 <?php endif; ?>
+
+                <!-- Estadísticas por Generación -->
+                <?php if (!empty($estadisticasGenerales['por_generacion'])): ?>
+                <div class="mb-3">
+                    <h6 class="text-muted mb-3">
+                        <i class="fas fa-graduation-cap me-2"></i>Por Generación
+                        <?php if ($estadisticasGenerales['generacion_mayoria']): ?>
+                        <span class="badge bg-info ms-2">
+                            Mayor actividad: <?= htmlspecialchars($estadisticasGenerales['generacion_mayoria']) ?>
+                        </span>
+                        <?php endif; ?>
+                    </h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Generación</th>
+                                    <th class="text-center">Total Archivos</th>
+                                    <th class="text-center">Finales</th>
+                                    <th class="text-center">Parciales</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($estadisticasGenerales['por_generacion'] as $gen => $stats): ?>
+                                <tr>
+                                    <td><strong><?= htmlspecialchars($gen) ?></strong></td>
+                                    <td class="text-center"><?= $stats['archivos'] ?></td>
+                                    <td class="text-center text-success"><?= $stats['finales'] ?></td>
+                                    <td class="text-center text-warning"><?= $stats['parciales'] ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <?php if (empty($estadisticasGenerales['total_alumnos'])): ?>
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    No hay datos de calificaciones disponibles para generar estadísticas.
+                </div>
+                <?php endif; ?>
+
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
@@ -934,81 +1257,14 @@ function abrirPreviewPDF(rutaWeb, nombreArchivo) {
 }
 
 // ============================================================
-// GRÁFICA DOUGHNUT - MATERIA MÁS APROBADA
+// 🆕 MODAL ESTADÍSTICAS
 // ============================================================
-function abrirModalGrafica() {
+function abrirModalEstadisticas() {
     ensureBootstrapReady(() => {
-        const datos = <?= json_encode($datosGraficaMateria, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
-        const modalEl = document.getElementById('modalGrafica');
-        const tituloEl = document.getElementById('graficaMateriaTitulo');
-
-        if (datos.materia) tituloEl.textContent = datos.materia;
-
-        const ctx = document.getElementById('graficaCircular');
-        if (!ctx) return;
-
-        if (!datos.total || datos.total === 0) {
-            ctx.parentNode.innerHTML =
-                '<p class="text-center text-muted py-5"><i class="fas fa-chart-pie fs-1 mb-3 d-block"></i>No hay datos para la gráfica.</p>';
+        const modalEl = document.getElementById('modalEstadisticas');
+        if (modalEl) {
             new bootstrap.Modal(modalEl).show();
-            return;
         }
-
-        if (window.graficaCircularInstance) window.graficaCircularInstance.destroy();
-
-        window.graficaCircularInstance = new Chart(ctx.getContext('2d'), {
-            type: 'doughnut',
-            data: {
-                labels: ['Aprobados', 'Reprobados'],
-                datasets: [{
-                    data: [
-                        <?= (int)($datosGraficaMateria['aprobados'] ?? 0) ?>,
-                        <?= (int)($datosGraficaMateria['reprobados'] ?? 0) ?>
-                    ],
-                    backgroundColor: ['#28a745', '#dc3545'],
-                    borderColor: '#ffffff',
-                    borderWidth: 3,
-                    hoverOffset: 10
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '70%',
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: { padding: 15, font: { size: 11, weight: '500' }, usePointStyle: true }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(26, 53, 94, 0.95)',
-                        titleFont: { size: 13, weight: '600' },
-                        bodyFont: { size: 12 },
-                        padding: 12,
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = context.raw || 0;
-                                const total = <?= (int)($datosGraficaMateria['total'] ?? 1) ?>;
-                                const percentage = total > 0 ? Math.round((value/total)*100) : 0;
-                                return `${label}: ${value} alumno(s) (${percentage}%)`;
-                            }
-                        }
-                    }
-                },
-                animation: { animateScale: true, animateRotate: true, duration: 800 }
-            }
-        });
-
-        new bootstrap.Modal(modalEl).show();
-
-        modalEl.addEventListener('hidden.bs.modal', function handler() {
-            if (window.graficaCircularInstance) {
-                window.graficaCircularInstance.destroy();
-                window.graficaCircularInstance = null;
-            }
-            this.removeEventListener('hidden.bs.modal', handler);
-        }, { once: true });
     });
 }
 

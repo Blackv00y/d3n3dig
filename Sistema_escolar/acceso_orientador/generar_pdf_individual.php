@@ -1,9 +1,10 @@
 <?php
-// generar_pdf_individual.php — Diseño Original + Lógica de Respaldo Condicional
+// generar_pdf_individual.php — Diseño Original + Lógica de Respaldo Condicional + Auditoría
 session_start();
 if (!isset($_SESSION['id_credencial'])) die("Acceso denegado.");
 
 include '../funciones/conexQRConejo.php';
+include '../funciones/funcion_auditoria_respaldos.php';  // ← NUEVO: Sistema de auditoría
 $secretKey = 'your-secret-key';
 
 $id_alumno = $_GET['id'] ?? die('ID no válido');
@@ -90,7 +91,7 @@ function boletaEstaCompleta($materias, $calificaciones) {
 // FUNCIÓN PARA GUARDAR PDF CON LÓGICA CONDICIONAL
 // Arquitectura: respaldos/boletas/[ID_ESCUELA]/[GENERACIÓN]/[TURNO]/grupos/[GRADO GRUPO]/
 // ============================================================
-function guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $turno, $debeGuardar, $esForzado = false) {
+function guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $turno, $debeGuardar, $esForzado = false, $conexion = null) {
     // Si no debe guardar y tampoco es forzado, retornar false
     if (!$debeGuardar && !$esForzado) {
         error_log("INFO: Respaldo NO ejecutado - Boleta incompleta y no forzado (Alumno: $id_alumno)");
@@ -182,6 +183,35 @@ function guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $turn
     try {
         $pdf->Output('F', $rutaArchivo);
         error_log("INFO: Respaldo $tipoRespaldo guardado exitosamente: $rutaArchivo");
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // REGISTRAR EN AUDITORÍA
+        // ═══════════════════════════════════════════════════════════════════
+        if (function_exists('registrarAuditoriaRespaldo')) {
+            // obtenerNombreUsuarioSesion necesita $conexion abierta — se llama aquí
+            $nombreUsuario_auditoria = ($conexion && function_exists('obtenerNombreUsuarioSesion'))
+                ? obtenerNombreUsuarioSesion($conexion, $_SESSION['id_credencial'] ?? 0)
+                : null;
+
+            $datosAuditoria = [
+                'nombre_archivo'  => $nombreArchivo,
+                'ruta_archivo'    => $rutaArchivo,
+                'tipo_respaldo'   => 'Individual',
+                'tipo_boleta'     => $tipoRespaldo, // 'Final' o 'Manual' — correcto aquí
+                'id_alumno'       => $id_alumno,
+                'grado'           => $grado,
+                'grupo'           => $grupo,
+                'turno'           => $turno,
+                'id_escuela'      => $id_escuela,
+                'usuario_sistema' => $_SESSION['id_credencial'] ?? null,
+                'nombre_usuario'  => $nombreUsuario_auditoria,
+            ];
+
+            // null = la función usa su propia conexión interna (v4)
+            registrarAuditoriaRespaldo(null, $datosAuditoria);
+        }
+        // ═══════════════════════════════════════════════════════════════════
+        
         return $rutaArchivo;
     } catch (Exception $e) {
         error_log("ERROR al guardar PDF: " . $e->getMessage());
@@ -488,7 +518,7 @@ foreach($periodos as $p) {
 // ============================================================
 // GUARDAR RESPALDO EN SERVIDOR (LÓGICA CONDICIONAL MANTENIDA)
 // ============================================================
-$rutaRespaldo = guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $turno, $debeGuardarRespaldo, $forzar_respaldo);
+$rutaRespaldo = guardarPDFRespaldo($pdf, $id_escuela, $id_alumno, $grado, $grupo, $turno, $debeGuardarRespaldo, $forzar_respaldo, $conexion);
 
 if ($rutaRespaldo) {
     $tipoRespaldo = $forzar_respaldo ? "MANUAL" : "AUTOMÁTICO";

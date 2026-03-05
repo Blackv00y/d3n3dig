@@ -1,10 +1,25 @@
 <?php
-// generar_respaldo_grupal.php — CON VALIDACIÓN COMPLETA/INCOMPLETA
+// generar_respaldo_grupal.php — CON VALIDACIÓN COMPLETA/INCOMPLETA + Auditoría
 // Genera PDFs individuales con nomenclatura diferenciada según estado
+
+// Iniciar buffer de salida para evitar output prematuro
+ob_start();
+
+// Suprimir warnings si es llamada AJAX
+if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
+    error_reporting(E_ERROR | E_PARSE);
+}
+
 session_start();
 if (!isset($_SESSION['id_credencial'])) exit;
 
 include '../funciones/conexQRConejo.php';
+
+// Verificar si existe el archivo de auditoría antes de incluirlo
+if (file_exists('../funciones/funcion_auditoria_respaldos.php')) {
+    include '../funciones/funcion_auditoria_respaldos.php';
+}
+
 $secretKey = 'your-secret-key';
 
 // ============================================================
@@ -601,6 +616,38 @@ foreach ($alumnos as $alum) {
         $pdf->Output('F', $rutaArchivo);
         $cantidad_generada++;
         error_log("INFO: ✓ PDF guardado - $nombreArchivo");
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // REGISTRAR EN AUDITORÍA
+        // ═══════════════════════════════════════════════════════════════════
+        if (function_exists('registrarAuditoriaRespaldo')) {
+            // $tipoBolet vale 'FINAL' o 'PARCIAL' — la BD espera 'Final'/'Parcial'
+            $tipoBoleta_auditoria = ucfirst(strtolower($tipoBolet));
+
+            // obtenerNombreUsuarioSesion necesita $conexion abierta — se llama aquí
+            $nombreUsuario_auditoria = function_exists('obtenerNombreUsuarioSesion')
+                ? obtenerNombreUsuarioSesion($conexion, $_SESSION['id_credencial'] ?? 0)
+                : null;
+
+            $datosAuditoria = [
+                'nombre_archivo'  => $nombreArchivo,
+                'ruta_archivo'    => $rutaArchivo,
+                'tipo_respaldo'   => 'Grupal',
+                'tipo_boleta'     => $tipoBoleta_auditoria,
+                'id_alumno'       => $id_alumno,
+                'grado'           => $grado,
+                'grupo'           => $grupo,
+                'turno'           => $turno,
+                'id_escuela'      => $id_escuela,
+                'usuario_sistema' => $_SESSION['id_credencial'] ?? null,
+                'nombre_usuario'  => $nombreUsuario_auditoria,
+            ];
+
+            // null = la función usa su propia conexión interna (v4)
+            registrarAuditoriaRespaldo(null, $datosAuditoria);
+        }
+        // ═══════════════════════════════════════════════════════════════════
+        
     } catch (Exception $e) {
         error_log("ERROR: Fallo al guardar PDF de alumno $id_alumno - " . $e->getMessage());
     }
@@ -627,6 +674,9 @@ $modoTexto = $respaldarTodo ? 'completo' : 'solo_listos';
 
 // ── Si es llamada AJAX, devolver JSON en lugar de redirigir ──
 if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
+    // Limpiar cualquier output anterior
+    ob_end_clean();
+    
     header('Content-Type: application/json');
     echo json_encode([
         'total' => $cantidad_generada,
