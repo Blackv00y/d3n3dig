@@ -1,5 +1,5 @@
 <?php
-// vista_general_grupos.php
+// vista_general_grupos_beta.php
 include '../funciones/conexQRConejo.php';
 
 // Iniciar la sesión

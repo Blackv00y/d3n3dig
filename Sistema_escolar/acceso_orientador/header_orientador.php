@@ -713,7 +713,7 @@
                                     <a class="dropdown-item dropdown-toggle" href="#"><i class="bi bi-calculator-fill"></i> Conteo</a>
                                     <ul class="dropdown-menu">
                                         <li><a class="dropdown-item" href="Conteo_alumnos.php"><i class="bi bi-people-fill"></i> Conteo de Alumnos</a></li>
-                                        <li><a class="dropdown-item" href="vista_general_grupos.php"><i class="bi bi-diagram-3-fill"></i> Vista General de Grupos</a></li>
+                                        <li><a class="dropdown-item" href="vista_general_grupos_beta.php"><i class="bi bi-diagram-3-fill"></i> Vista General de Grupos</a></li>
                                     </ul>
                                 </li>
 
@@ -763,7 +763,7 @@
                                 <li class="dropdown-submenu">
                                     <a class="dropdown-item dropdown-toggle" href="#"><i class="bi bi-file-earmark-bar-graph-fill"></i> Control de Calificaciones</a>
                                     <ul class="dropdown-menu">
-                                        <li><a class="dropdown-item" href="vista_general_grupos.php"><i class="bi bi-grid-3x3-gap-fill"></i> Grupos</a></li>
+                                        <li><a class="dropdown-item" href="vista_general_grupos_beta.php"><i class="bi bi-grid-3x3-gap-fill"></i> Grupos</a></li>
                                     </ul>
                                 </li>
 

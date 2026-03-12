@@ -63,7 +63,7 @@ if ($result_usuario->num_rows > 0) {
     $nombre_credencial = $user['nombre_credencial'];
     $nombre_escuela = $user['nombre_escuela'];
 } else {
-    header("Location: ../login.php");
+    header("Location: login.php");
     exit();
 }
 

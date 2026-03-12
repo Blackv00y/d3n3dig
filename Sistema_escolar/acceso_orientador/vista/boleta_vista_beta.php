@@ -1,4 +1,4 @@
-<!-- vista/boleta_vista.php - SIN ESTRUCTURA HTML DUPLICADA -->
+<!-- vista/boleta_vista_beta.php - SIN ESTRUCTURA HTML DUPLICADA -->
 <!-- El header, head y body ya vienen de header_orientador.php -->
 
 <style>
@@ -329,7 +329,7 @@
         </div>
         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
             <!-- Historial -->
-            <a href="historial_respaldos.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
+            <a href="historial_respaldos_beta.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
                class="btn-backup-group"
                style="background: linear-gradient(135deg, #105881, #34c0e6);">
                 📋 Historial
@@ -437,11 +437,11 @@
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>"
+                    <a href="generar_pdf_individual_beta.php?id=<?= $alum['id_credencial'] ?>"
                        target="_blank" class="download-btn">
                         📄 Imprimir PDF
                     </a>
-                    <a href="generar_pdf_individual.php?id=<?= $alum['id_credencial'] ?>&forzar_respaldo=1"
+                    <a href="generar_pdf_individual_beta.php?id=<?= $alum['id_credencial'] ?>&forzar_respaldo=1"
                        target="_blank"
                        class="backup-btn"
                        onclick="return confirm('¿Generar respaldo?\n\nSe guardará como Boleta_Final_<?= $alum['id_credencial'] ?>.pdf');">
@@ -455,7 +455,7 @@
 </div>
 
 <!-- BOTÓN ZIP -->
-<a href="generar_zip_boletas.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
+<a href="generar_zip_boletas_beta.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
    class="btn btn-download-all">
     Descargar Todas las Boletas en ZIP (<?= count($alumnos) ?> estudiantes)
 </a>
@@ -727,7 +727,7 @@ function abrirModalRespaldo(grado, grupo, turno) {
 
 // ✅ VERIFICAR ESTADO DEL GRUPO (AJAX)
 function verificarGrupo(grado, grupo, turno) {
-    const url = `verificar_estado_grupo.php?grado=${encodeURIComponent(grado)}&grupo=${encodeURIComponent(grupo)}&turno=${encodeURIComponent(turno)}`;
+    const url = `verificar_estado_grupo_beta.php?grado=${encodeURIComponent(grado)}&grupo=${encodeURIComponent(grupo)}&turno=${encodeURIComponent(turno)}`;
     
     fetch(url, { credentials: 'same-origin' })
         .then(res => {
@@ -817,7 +817,7 @@ function ejecutarRespaldo(todo) {
     document.getElementById('respaldo-ejecutando').classList.remove('d-none');
     iniciarProgresoSimulado();
     
-    const url = `generar_respaldo_grupal.php?grado=${encodeURIComponent(_respaldo.grado)}&grupo=${encodeURIComponent(_respaldo.grupo)}&turno=${encodeURIComponent(_respaldo.turno)}&todo=${todo}&ajax=1`;
+    const url = `generar_respaldo_grupal_beta.php?grado=${encodeURIComponent(_respaldo.grado)}&grupo=${encodeURIComponent(_respaldo.grupo)}&turno=${encodeURIComponent(_respaldo.turno)}&todo=${todo}&ajax=1`;
     
     fetch(url, { credentials: 'same-origin' })
         .then(res => {
@@ -838,7 +838,7 @@ function ejecutarRespaldo(todo) {
                     parciales: data.parciales ?? 0,
                     modo: data.modo ?? 'completo'
                 });
-                window.location.href = `boleta_alumnos_nueva.php?${params.toString()}`;
+                window.location.href = `boleta_alumnos_nueva_beta.php?${params.toString()}`;
             }, 800);
         })
         .catch(err => {
@@ -896,3 +896,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('modalRespaldo')?.addEventListener('hidden.bs.modal', detenerProgreso);
 });
 </script>
+<?php
+// ✅ FOOTER AL FINAL (para no romper modales/scripts)
+require_once __DIR__ . '/footer_orientador.php';

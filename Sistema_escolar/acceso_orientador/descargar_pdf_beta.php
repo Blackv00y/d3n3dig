@@ -1,5 +1,5 @@
 <?php
-// descargar_pdf.php — Endpoint seguro para servir PDFs de respaldo
+// descargar_pdf_beta.php — Endpoint seguro para servir PDFs de respaldo
 // Actualizado para nueva arquitectura de carpetas
 session_start();
 if (!isset($_SESSION['id_credencial'])) {

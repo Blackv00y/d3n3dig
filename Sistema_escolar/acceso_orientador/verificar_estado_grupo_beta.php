@@ -1,5 +1,5 @@
 <?php
-// verificar_estado_grupo.php
+// verificar_estado_grupo_beta.php
 // Endpoint AJAX: Analiza el grupo y devuelve conteos de alumnos listos/pendientes
 // Responde SIEMPRE con JSON — no genera HTML ni redirige.
 
@@ -16,7 +16,7 @@ if (!isset($_SESSION['id_credencial'])) {
 include '../funciones/conexQRConejo.php';
 $secretKey = 'your-secret-key';
 
-// ── Función de verificación de boleta completa (misma lógica que generar_pdf_individual.php) ──
+// ── Función de verificación de boleta completa (misma lógica que generar_pdf_individual_beta.php) ──
 function boletaEstaCompleta(array $materias, array $calificaciones): bool {
     $totalMaterias = count($materias);
     if ($totalMaterias === 0) return false;

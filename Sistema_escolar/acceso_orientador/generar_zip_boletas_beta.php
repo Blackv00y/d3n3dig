@@ -1,5 +1,5 @@
 <?php
-// generar_zip_boletas.php — Diseño igual al individual
+// generar_zip_boletas_beta.php — Diseño igual al individual
 session_start();
 if (!isset($_SESSION['id_credencial'])) exit;
 
@@ -78,7 +78,7 @@ while ($row = mysqli_fetch_assoc($result)) {
 if (empty($alumnos)) die("No hay alumnos en este grupo.");
 
 // --- Cargar FPDF extendido ---
-require_once 'fpdf/fpdf.php';
+require_once __DIR__ . '/../fpdf/fpdf.php';
 
 class BoletaPDF extends FPDF {
     function Circle($x, $y, $r, $style='D') {
@@ -145,7 +145,7 @@ if ($zip->open($tmp_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
         $foto2 = !empty($alum_data['ruta_foto2']) 
             ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum_data['ruta_foto2'], '/') 
             : '';
-        $foto_default = __DIR__ . '/fpdf/R.png';
+        $foto_default = __DIR__ . '/../fpdf/R.png';
         $foto = file_exists($foto1) ? $foto1 : (file_exists($foto2) ? $foto2 : $foto_default);
 
         // --- Materias ---

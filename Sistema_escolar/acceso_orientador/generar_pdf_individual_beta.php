@@ -1,10 +1,10 @@
 <?php
-// generar_pdf_individual.php — Diseño Original + Lógica de Respaldo Condicional + Auditoría
+// generar_pdf_individual_beta.php — Diseño Original + Lógica de Respaldo Condicional + Auditoría
 session_start();
 if (!isset($_SESSION['id_credencial'])) die("Acceso denegado.");
 
 include '../funciones/conexQRConejo.php';
-include '../funciones/funcion_auditoria_respaldos.php';  // ← NUEVO: Sistema de auditoría
+include '../funciones/funcion_auditoria_respaldos_beta.php';  // ← NUEVO: Sistema de auditoría
 $secretKey = 'your-secret-key';
 
 $id_alumno = $_GET['id'] ?? die('ID no válido');
@@ -261,7 +261,7 @@ $foto1 = !empty($alum['ruta_foto'])
 $foto2 = !empty($alum['ruta_foto2']) 
     ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum['ruta_foto2'], '/') 
     : '';
-$foto_default = __DIR__ . '/fpdf/R.png';
+$foto_default = __DIR__ . '/../fpdf/R.png';
 $foto = file_exists($foto1) ? $foto1 : (file_exists($foto2) ? $foto2 : $foto_default);
 
 // --- Materias asignadas al alumno ---
@@ -299,7 +299,7 @@ if ($forzar_respaldo) {
 }
 
 // --- FPDF EXTENDIDO ---
-require_once 'fpdf/fpdf.php';
+require_once __DIR__ . '/../fpdf/fpdf.php';
 
 class BoletaPDF extends FPDF {
     function Circle($x, $y, $r, $style='D') {

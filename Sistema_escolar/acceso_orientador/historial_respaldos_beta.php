@@ -4,7 +4,7 @@
 
 session_start();
 if (!isset($_SESSION['id_credencial'])) {
-    header("Location: ../login.php");
+    header("Location: login.php");
     exit();
 }
 
@@ -774,7 +774,7 @@ require_once __DIR__ . '/header_orientador.php';
             <strong>Año:</strong> <?= htmlspecialchars($anioBusqueda) ?>
         </div>
         <div>
-            <a href="boleta_alumnos_nueva.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
+            <a href="boleta_alumnos_nueva_beta.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
                class="btn-back">
                 <i class="fas fa-arrow-left"></i> Volver
             </a>
@@ -858,7 +858,7 @@ require_once __DIR__ . '/header_orientador.php';
         <button class="btn btn-stats" onclick="abrirModalEstadisticas()">
             <i class="fas fa-chart-bar"></i> Estadísticas
         </button>
-        <button class="btn btn-outline-primary" onclick="window.location.href='ver_auditoria_respaldos.php'">
+        <button class="btn btn-outline-primary" onclick="window.location.href='ver_auditoria_respaldos_beta.php'">
             <i class="fas fa-clipboard-list"></i> Ver Auditoría
         </button>
     </div>
@@ -971,12 +971,12 @@ require_once __DIR__ . '/header_orientador.php';
             <p class="mb-0 text-muted">
                 <?php if (!is_dir($rutaCompleta)): ?>
                     <strong>La carpeta no existe.</strong><br>
-                    <small>Verifica que <code>generar_respaldo_grupal.php</code> haya creado los archivos.</small>
+                    <small>Verifica que <code>generar_respaldo_grupal_beta.php</code> haya creado los archivos.</small>
                 <?php else: ?>
                     Los archivos PDF generados aparecerán aquí automáticamente.
                 <?php endif; ?>
             </p>
-            <a href="boleta_alumnos_nueva.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
+            <a href="boleta_alumnos_nueva_beta.php?grado=<?= urlencode($grado) ?>&grupo=<?= urlencode($grupo) ?>&turno=<?= urlencode($turno) ?>"
                class="btn btn-primary mt-4"
                style="background: linear-gradient(135deg, #0f6fff, #14f1f8); border: none; padding: 12px 35px; border-radius: 50px;">
                 <i class="fas fa-plus me-2"></i>Generar Primer Respaldo

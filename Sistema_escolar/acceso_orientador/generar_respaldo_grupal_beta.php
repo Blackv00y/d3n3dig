@@ -1,5 +1,5 @@
 <?php
-// generar_respaldo_grupal.php — CON VALIDACIÓN COMPLETA/INCOMPLETA + Auditoría
+// generar_respaldo_grupal_beta.php — CON VALIDACIÓN COMPLETA/INCOMPLETA + Auditoría
 // Genera PDFs individuales con nomenclatura diferenciada según estado
 
 // Iniciar buffer de salida para evitar output prematuro
@@ -16,8 +16,8 @@ if (!isset($_SESSION['id_credencial'])) exit;
 include '../funciones/conexQRConejo.php';
 
 // Verificar si existe el archivo de auditoría antes de incluirlo
-if (file_exists('../funciones/funcion_auditoria_respaldos.php')) {
-    include '../funciones/funcion_auditoria_respaldos.php';
+if (file_exists('../funciones/funcion_auditoria_respaldos_beta.php')) {
+    include '../funciones/funcion_auditoria_respaldos_beta.php';
 }
 
 $secretKey = 'your-secret-key';
@@ -241,7 +241,7 @@ if (empty($alumnos)) die("No hay alumnos en este grupo.");
 // CARGAR FPDF EXTENDIDO
 // ============================================================
 
-require_once 'fpdf/fpdf.php';
+require_once __DIR__ . '/../fpdf/fpdf.php';
 
 class BoletaPDF extends FPDF {
     function Circle($x, $y, $r, $style='D') {
@@ -315,7 +315,7 @@ foreach ($alumnos as $alum) {
     $foto2 = !empty($alum_data['ruta_foto2']) 
         ? $_SERVER['DOCUMENT_ROOT'] . '/sistema_escolar/' . ltrim($alum_data['ruta_foto2'], '/') 
         : '';
-    $foto_default = __DIR__ . '/fpdf/R.png';
+    $foto_default = __DIR__ . '/../fpdf/R.png';
     $foto = file_exists($foto1) ? $foto1 : (file_exists($foto2) ? $foto2 : $foto_default);
 
     // Materias
@@ -688,7 +688,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
 }
 
 // ── Si NO es AJAX, redirigir normalmente ──
-header("Location: boleta_alumnos_nueva.php?grado=" . urlencode($grado) . 
+header("Location: boleta_alumnos_nueva_beta.php?grado=" . urlencode($grado) . 
        "&grupo=" . urlencode($grupo) . 
        "&turno=" . urlencode($turno) . 
        "&total=" . urlencode($cantidad_generada) .

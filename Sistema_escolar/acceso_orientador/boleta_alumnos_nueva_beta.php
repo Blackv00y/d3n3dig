@@ -1,5 +1,5 @@
 <?php
-// boleta_alumnos_nueva.php — VERSIÓN UNIFICADA Y CORREGIDA
+// boleta_alumnos_nueva_beta.php — VERSIÓN UNIFICADA Y CORREGIDA
 // ✅ Filtro de materias consistente: am.estado = 1
 // ✅ Consulta de calificaciones con id_escuela
 // ✅ Clasificación: aprobado/reprobado/incompleto
@@ -11,7 +11,7 @@ error_reporting(E_ALL);
 session_start();
 
 if (!isset($_SESSION['id_credencial'])) {
-    header("Location: ../login.php");
+    header("Location: login.php");
     exit();
 }
 
@@ -249,7 +249,7 @@ $alumnos = $alumnos_con_estado;
 <?php
 
 include 'header_orientador.php';
-include 'vista/boleta_vista.php';
+include 'vista/boleta_vista_beta.php';
 
 // ============================================================
 // 13. SCRIPT CHART.JS (al final para asegurar carga del DOM)

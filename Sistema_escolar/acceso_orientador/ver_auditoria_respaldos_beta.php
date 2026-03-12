@@ -8,7 +8,7 @@
 
 session_start();
 if (!isset($_SESSION['id_credencial'])) {
-    header("Location: ../login.php");
+    header("Location: login.php");
     exit();
 }
 
@@ -164,7 +164,7 @@ mysqli_close($conexion);
         <a href="javascript:history.back()" class="btn btn-secondary">
             <i class="fas fa-arrow-left me-2"></i>Volver al Historial
         </a>
-        <a href="historial_respaldos.php" class="btn btn-outline-secondary ms-2">
+        <a href="historial_respaldos_beta.php" class="btn btn-outline-secondary ms-2">
             <i class="fas fa-home me-2"></i>Ir a Historial Principal
         </a>
     </div>
